@@ -274,17 +274,6 @@ export const InvoiceService = {
           note: "Thanh toán khi xuất hóa đơn"
         }
       });
-
-      // Cập nhật đặt phòng thành CHECKED_OUT và phòng dọn dẹp DIRTY
-      await prisma.booking.update({
-        where: { id: BigInt(bookingId) },
-        data: { status: "CHECKED_OUT" }
-      });
-
-      await prisma.room.update({
-        where: { id: booking.roomId },
-        data: { status: "DIRTY" }
-      });
     }
 
     // Load lại hóa đơn đầy đủ dữ liệu (sau khi có thể đã thêm payment)
@@ -312,15 +301,15 @@ export const InvoiceService = {
     return serializeInvoice(reloadedInvoice);
   },
 
-  // 5. Thanh toán hóa đơn (đối với hóa đơn UNPAID)
+  // 5. Thanh toán hóa đơn (hỗ trợ thanh toán toàn bộ hoặc một phần)
   payInvoice: async (id: string, data: any) => {
-    const { paymentMethod, note } = data;
+    const { amount, paymentMethod, note } = data;
     const cleanId = BigInt(id);
 
     const invoice = await prisma.invoice.findUnique({
       where: { id: cleanId },
       include: {
-        booking: true
+        payments: true
       }
     });
 
@@ -328,25 +317,46 @@ export const InvoiceService = {
       throw new Error("Không tìm thấy hóa đơn");
     }
 
-    if (invoice.status === "PAID") {
-      throw new Error("Hóa đơn đã được thanh toán từ trước");
+    // Tính toán số tiền đã thanh toán trước đó
+    const totalPaidBefore = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const remainingAmount = Number(invoice.totalAmount) - totalPaidBefore;
+
+    if (remainingAmount <= 0) {
+      throw new Error("Hóa đơn đã được thanh toán đầy đủ");
     }
 
-    // 1. Tạo bản ghi thanh toán
+    // Số tiền thanh toán thực tế: nếu không truyền thì thanh toán toàn bộ phần còn lại
+    const payAmountVal = amount !== undefined && amount !== null ? Number(amount) : remainingAmount;
+    if (payAmountVal <= 0) {
+      throw new Error("Số tiền thanh toán phải lớn hơn 0");
+    }
+
+    // 1. Ghi nhận giao dịch thanh toán
     await prisma.payment.create({
       data: {
         invoiceId: cleanId,
-        amount: invoice.totalAmount,
+        amount: new Prisma.Decimal(payAmountVal),
         paymentMethod: paymentMethod || "CASH",
-        note: note || "Thanh toán hóa đơn sau"
+        note: note || "Thanh toán hóa đơn"
       }
     });
 
-    // 2. Cập nhật hóa đơn sang PAID
+    // 2. Tính lại tổng tiền đã thanh toán (bao gồm giao dịch vừa tạo)
+    const totalPaidAfter = totalPaidBefore + payAmountVal;
+
+    // 3. Xác định trạng thái hóa đơn mới
+    let newStatus = "UNPAID";
+    if (totalPaidAfter >= Number(invoice.totalAmount) - 1) {
+      newStatus = "PAID";
+    } else if (totalPaidAfter > 0) {
+      newStatus = "PARTIALLY_PAID";
+    }
+
+    // 4. Cập nhật trạng thái hóa đơn
     const updatedInvoice = await prisma.invoice.update({
       where: { id: cleanId },
       data: {
-        status: "PAID"
+        status: newStatus
       },
       include: {
         booking: {
@@ -367,17 +377,70 @@ export const InvoiceService = {
       }
     });
 
-    // 3. Cập nhật đặt phòng thành CHECKED_OUT và phòng dọn dẹp DIRTY
-    await prisma.booking.update({
-      where: { id: invoice.bookingId },
-      data: { status: "CHECKED_OUT" }
-    });
-
-    await prisma.room.update({
-      where: { id: invoice.booking.roomId },
-      data: { status: "DIRTY" }
-    });
-
     return serializeInvoice(updatedInvoice);
+  },
+
+  // 6. Đồng bộ hóa đơn khi thông tin Đặt phòng thay đổi (ví dụ: Thêm/Xóa dịch vụ)
+  syncInvoiceWithBooking: async (bookingId: bigint) => {
+    // Tìm hóa đơn liên kết với đặt phòng
+    const invoice = await prisma.invoice.findUnique({
+      where: { bookingId },
+      include: {
+        booking: {
+          include: {
+            room: {
+              include: {
+                roomType: true
+              }
+            },
+            bookingServices: true
+          }
+        },
+        payments: true
+      }
+    });
+
+    if (!invoice) return null;
+
+    // 1. Tính toán tiền phòng
+    const checkIn = new Date(invoice.booking.checkInDate);
+    const checkOut = new Date(invoice.booking.checkOutDate);
+    const timeDiff = checkOut.getTime() - checkIn.getTime();
+    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    if (nights <= 0) nights = 1;
+
+    const roomPrice = invoice.booking.room.pricePerNight !== null ? Number(invoice.booking.room.pricePerNight) : Number(invoice.booking.room.roomType.pricePerNight);
+    const roomCharge = roomPrice * nights;
+
+    // 2. Tính toán tiền dịch vụ mới
+    const servicesCharge = invoice.booking.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
+
+    // 3. Tính toán tổng tiền hóa đơn mới
+    const subTotal = roomCharge + servicesCharge;
+    const taxAmount = subTotal * 0.1; // 10%
+    const discount = Number(invoice.discount);
+    const totalAmount = Math.max(0, subTotal + taxAmount - discount);
+
+    // 4. Tính toán trạng thái hóa đơn mới dựa trên số tiền đã thanh toán trước đó
+    const totalPaid = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    let newStatus = "UNPAID";
+    if (totalPaid >= totalAmount - 1) {
+      newStatus = "PAID";
+    } else if (totalPaid > 0) {
+      newStatus = "PARTIALLY_PAID";
+    }
+
+    // 5. Cập nhật hóa đơn trong Database
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        subTotal: new Prisma.Decimal(subTotal),
+        taxAmount: new Prisma.Decimal(taxAmount),
+        totalAmount: new Prisma.Decimal(totalAmount),
+        status: newStatus
+      }
+    });
+
+    return updated;
   }
 };

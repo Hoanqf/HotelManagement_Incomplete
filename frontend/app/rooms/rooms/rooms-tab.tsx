@@ -358,6 +358,16 @@ export function RoomsTab({
                           Đã dọn dẹp
                         </Button>
                       )}
+                      {room.status === "OCCUPIED" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-blue-600 border-blue-200 hover:bg-blue-50 h-8 text-xs font-semibold mr-2"
+                          onClick={() => onRoomClick(room)}
+                        >
+                          Dịch vụ
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => openForm(room)}><Edit className="size-4" /></Button>
                       <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onDeleteRoom(room.id)}><Trash2 className="size-4" /></Button>
                     </TableCell>

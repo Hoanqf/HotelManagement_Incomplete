@@ -58,6 +58,7 @@ function formatDate(dateStr: string) {
 
 function getStatusLabel(status: string) {
   if (status === "PAID") return "Đã thanh toán";
+  if (status === "PARTIALLY_PAID") return "Thanh toán một phần";
   if (status === "UNPAID") return "Chưa thanh toán";
   if (status === "CANCELLED") return "Đã hủy";
   return status;
@@ -74,6 +75,7 @@ function getBookingStatusLabel(status: string) {
 
 function getStatusClass(status: string) {
   if (status === "PAID") return "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300";
+  if (status === "PARTIALLY_PAID") return "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
   if (status === "UNPAID") return "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300";
   if (status === "CANCELLED") return "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300";
   return "bg-muted text-muted-foreground";
@@ -112,6 +114,7 @@ export default function InvoicesPage() {
   const [payMethod, setPayMethod] = useState("CASH");
   const [payNote, setPayNote] = useState("");
   const [paying, setPaying] = useState(false);
+  const [selectedPayInvoice, setSelectedPayInvoice] = useState<any>(null);
 
   // View Invoice Modal State
   const [openViewDialog, setOpenViewDialog] = useState(false);
@@ -185,11 +188,17 @@ export default function InvoicesPage() {
 
   // Handle Open Payment Dialog
   const handleOpenPayDialog = (invoice: any) => {
+    setSelectedPayInvoice(invoice);
     setPayInvoiceId(invoice.id);
     setPayInvoiceNumber(invoice.invoiceNumber);
-    setPayAmount(invoice.totalAmount);
+    
+    // Tính toán số tiền còn thiếu để điền sẵn vào form
+    const totalPaid = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
+    const remaining = Number(invoice.totalAmount) - totalPaid;
+    setPayAmount(remaining > 0 ? remaining : 0);
+    
     setPayMethod("CASH");
-    setPayNote("Thanh toán hóa đơn sau");
+    setPayNote("Thanh toán hóa đơn");
     setOpenPayDialog(true);
   };
 
@@ -199,12 +208,14 @@ export default function InvoicesPage() {
     setPaying(true);
     try {
       await InvoiceAPI.payInvoice(payInvoiceId, {
+        amount: Number(payAmount),
         paymentMethod: payMethod,
         note: payNote,
       });
 
       toast.success("Thanh toán hóa đơn thành công!");
       setOpenPayDialog(false);
+      setSelectedPayInvoice(null);
       loadData();
     } catch (error: any) {
       toast.error(error.message || "Lỗi khi thực hiện thanh toán");
@@ -254,7 +265,7 @@ export default function InvoicesPage() {
         className={
           isPrint
             ? "hidden print:block bg-white text-black p-8 w-full font-sans"
-            : "border rounded-lg p-6 bg-card text-card-foreground shadow-sm font-sans"
+            : "border rounded-lg p-6 bg-card text-card-foreground shadow-sm font-sans w-full"
         }
       >
         {/* Receipt Header */}
@@ -372,24 +383,56 @@ export default function InvoicesPage() {
         </div>
 
         {/* Payment History */}
-        <div className="mt-8 border-t pt-4 text-xs">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="mt-6 border-t pt-4 text-xs">
+          <div className="flex flex-col md:flex-row md:justify-between gap-4">
             <div>
-              <span className="text-muted-foreground block">Trạng thái thanh toán:</span>
+              <span className="text-muted-foreground block mb-0.5">Trạng thái thanh toán:</span>
               <strong>
-                <span className={invoice.status === "PAID" ? "text-green-600 font-bold" : "text-amber-600 font-bold"}>
+                <span className={
+                  invoice.status === "PAID" 
+                    ? "text-green-600 font-bold text-sm" 
+                    : invoice.status === "PARTIALLY_PAID"
+                    ? "text-blue-600 font-bold text-sm"
+                    : "text-amber-600 font-bold text-sm"
+                }>
                   {getStatusLabel(invoice.status).toUpperCase()}
                 </span>
               </strong>
+              
+              {invoice.payments && invoice.payments.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">
+                    Lịch sử giao dịch:
+                  </span>
+                  {invoice.payments.map((p: any, idx: number) => (
+                    <div key={p.id || idx} className="text-[11px] text-foreground/80">
+                      • Lần {idx + 1}: <span className="font-semibold">{formatCurrency(p.amount)}</span> ({getPaymentMethodLabel(p.paymentMethod)}) - <span className="text-muted-foreground text-[10px]">{formatDate(p.paidAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {invoice.status === "PAID" && invoice.payments?.length > 0 && (
-              <div className="text-right">
-                <span className="text-muted-foreground block">Phương thức thanh toán:</span>
-                <strong>{getPaymentMethodLabel(invoice.payments[0].paymentMethod)}</strong>
-                <span className="block text-[10px] text-muted-foreground">
-                  Ngày trả: {formatDate(invoice.payments[0].paidAt)}
-                </span>
+            {invoice.payments && invoice.payments.length > 0 && (
+              <div className="text-right space-y-1">
+                <div className="flex justify-between w-60 ml-auto">
+                  <span className="text-muted-foreground">Tổng tiền hóa đơn:</span>
+                  <span className="font-medium">{formatCurrency(invoice.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between w-60 ml-auto text-emerald-600 dark:text-emerald-400">
+                  <span className="text-muted-foreground">Tổng đã thanh toán:</span>
+                  <span className="font-semibold">
+                    {formatCurrency(invoice.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0))}
+                  </span>
+                </div>
+                {invoice.totalAmount - invoice.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0) > 0 && (
+                  <div className="flex justify-between w-60 ml-auto text-primary font-bold border-t pt-1">
+                    <span>Còn lại chưa trả:</span>
+                    <span>
+                      {formatCurrency(invoice.totalAmount - invoice.payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0))}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -534,6 +577,7 @@ export default function InvoicesPage() {
                 <SelectContent>
                   <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
                   <SelectItem value="PAID">Đã thanh toán</SelectItem>
+                  <SelectItem value="PARTIALLY_PAID">Thanh toán một phần</SelectItem>
                   <SelectItem value="UNPAID">Chưa thanh toán</SelectItem>
                 </SelectContent>
               </Select>
@@ -599,9 +643,9 @@ export default function InvoicesPage() {
                             {formatCurrency(inv.totalAmount)}
                           </td>
                           <td className="p-4">
-                            {inv.status === "PAID" && inv.payments?.length > 0 ? (
+                            {inv.payments && inv.payments.length > 0 ? (
                               <span className="text-xs">
-                                {getPaymentMethodLabel(inv.payments[0].paymentMethod)}
+                                {Array.from(new Set(inv.payments.map((p: any) => getPaymentMethodLabel(p.paymentMethod)))).join(", ")}
                               </span>
                             ) : (
                               <span className="text-xs text-muted-foreground">Chưa thanh toán</span>
@@ -614,7 +658,7 @@ export default function InvoicesPage() {
                           </td>
                           <td className="p-4">
                             <div className="flex justify-end gap-2">
-                              {inv.status === "UNPAID" && (
+                              {(inv.status === "UNPAID" || inv.status === "PARTIALLY_PAID") && (
                                 <Button
                                   variant="default"
                                   size="sm"
@@ -833,10 +877,51 @@ export default function InvoicesPage() {
           </DialogHeader>
 
           <form onSubmit={handlePayInvoice} className="space-y-4">
-            <div className="rounded-lg bg-primary/5 p-4 text-center">
-              <span className="text-sm text-muted-foreground block">Tổng tiền cần thanh toán</span>
-              <span className="text-2xl font-bold text-primary">{formatCurrency(payAmount)}</span>
-            </div>
+            {(() => {
+              const totalAmt = selectedPayInvoice ? Number(selectedPayInvoice.totalAmount) : 0;
+              const totalPaidAmt = selectedPayInvoice?.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
+              const remainingAmt = Math.max(0, totalAmt - totalPaidAmt);
+
+              return (
+                <>
+                  <div className="rounded-lg bg-secondary/30 border border-border/50 p-4 space-y-2">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Tổng tiền hóa đơn:</span>
+                      <span className="font-semibold text-foreground">{formatCurrency(totalAmt)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Đã thanh toán trước đó:</span>
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalPaidAmt)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold border-t border-border/50 pt-2 text-primary">
+                      <span>Số tiền còn lại:</span>
+                      <span>{formatCurrency(remainingAmt)}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pay-amount-input">Số tiền thanh toán lần này (VND)</Label>
+                    <Input
+                      id="pay-amount-input"
+                      type="number"
+                      placeholder="Nhập số tiền cần thanh toán"
+                      value={payAmount}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPayAmount(val);
+                      }}
+                      min={1000}
+                      max={remainingAmt}
+                      className="w-full text-lg font-semibold text-primary"
+                      required
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Mặc định điền toàn bộ số tiền còn thiếu. Có thể điều chỉnh nếu muốn thanh toán một phần.
+                    </p>
+                  </div>
+                </>
+              );
+            })()}
 
             <div className="space-y-2">
               <Label htmlFor="pay-method-select">Phương thức thanh toán</Label>
@@ -877,7 +962,7 @@ export default function InvoicesPage() {
 
       {/* VIEW INVOICE DETAIL & PRINT MODAL */}
       <Dialog open={openViewDialog} onOpenChange={setOpenViewDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <DialogContent className="sm:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto p-6">
           <DialogHeader className="print:hidden">
             <DialogTitle>Chi tiết hóa đơn</DialogTitle>
           </DialogHeader>
@@ -892,7 +977,7 @@ export default function InvoicesPage() {
                 <Button variant="outline" onClick={() => setOpenViewDialog(false)}>
                   Đóng
                 </Button>
-                {activeInvoice.status === "UNPAID" && (
+                {(activeInvoice.status === "UNPAID" || activeInvoice.status === "PARTIALLY_PAID") && (
                   <Button
                     className="bg-green-600 hover:bg-green-700 text-white"
                     onClick={() => {

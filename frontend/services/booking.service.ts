@@ -40,5 +40,42 @@ export const BookingAPI = {
       throw new Error(result.message || "Không thể cập nhật trạng thái");
     }
     return result;
+  },
+
+  // 4. Lấy danh sách dịch vụ của đặt phòng
+  getBookingServices: async (bookingId: string) => {
+    const res = await fetch(`${API_URL}/${bookingId}/services`);
+    if (!res.ok) {
+      throw new Error("Không thể tải danh sách dịch vụ của phòng");
+    }
+    return res.json();
+  },
+
+  // 5. Thêm dịch vụ vào đặt phòng
+  addBookingService: async (bookingId: string, data: { serviceId: string; quantity: number }) => {
+    const res = await fetch(`${API_URL}/${bookingId}/services`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || "Không thể thêm dịch vụ");
+    }
+    return result;
+  },
+
+  // 6. Xóa dịch vụ khỏi đặt phòng
+  removeBookingService: async (bookingId: string, bookingServiceId: string) => {
+    const res = await fetch(`${API_URL}/${bookingId}/services/${bookingServiceId}`, {
+      method: "DELETE",
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || "Không thể xóa dịch vụ");
+    }
+    return result;
   }
 };

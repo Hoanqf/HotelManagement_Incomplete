@@ -43,5 +43,58 @@ export const BookingController = {
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
+  },
+
+  // 4. Lấy danh sách dịch vụ của đặt phòng
+  getServices: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const data = await BookingService.getBookingServices(id);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: "Lỗi khi lấy danh sách dịch vụ đặt phòng: " + error.message });
+    }
+  },
+
+  // 5. Thêm dịch vụ vào đặt phòng
+  addService: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { serviceId, quantity } = req.body;
+
+      if (!serviceId) {
+        return res.status(400).json({ message: "Mã dịch vụ không được bỏ trống" });
+      }
+      if (!quantity || Number(quantity) <= 0) {
+        return res.status(400).json({ message: "Số lượng phải lớn hơn 0" });
+      }
+
+      const result = await BookingService.addBookingService(id, serviceId, Number(quantity));
+      res.status(201).json({
+        message: "Thêm dịch vụ thành công",
+        data: result
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  },
+
+  // 6. Xóa dịch vụ khỏi đặt phòng
+  removeService: async (req: Request, res: Response) => {
+    try {
+      const { bookingServiceId } = req.params;
+
+      if (!bookingServiceId) {
+        return res.status(400).json({ message: "Mã dịch vụ đặt phòng không được bỏ trống" });
+      }
+
+      const result = await BookingService.removeBookingService(bookingServiceId);
+      res.json({
+        message: "Xóa dịch vụ thành công",
+        data: result
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
   }
 };

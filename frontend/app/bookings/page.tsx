@@ -117,6 +117,54 @@ export default function BookingsPage() {
       setSearchQuery(search);
     }
   }, []);
+  
+  // Tự động xóa phòng đã chọn nếu người dùng thay đổi ngày dẫn đến phòng không còn trống
+  useEffect(() => {
+    if (formData.roomId && formData.checkInDate && formData.checkOutDate) {
+      const checkIn = new Date(formData.checkInDate);
+      const checkOut = new Date(formData.checkOutDate);
+      if (checkOut > checkIn) {
+        const isStillAvailable = roomsList.some((room) => {
+          if (room.id !== formData.roomId || room.status === "MAINTENANCE" || room.status === "DIRTY") return false;
+          
+          const hasOverlap = bookingsList.some((booking) => {
+            const isActiveBooking = ["PENDING", "CONFIRMED", "CHECKED_IN"].includes(booking.status);
+            if (!isActiveBooking || booking.roomId !== room.id) return false;
+            
+            const bCheckIn = new Date(booking.checkInDate);
+            const bCheckOut = new Date(booking.checkOutDate);
+            return checkIn < bCheckOut && checkOut > bCheckIn;
+          });
+          return !hasOverlap;
+        });
+
+        if (!isStillAvailable) {
+          setFormData(prev => ({ ...prev, roomId: "" }));
+        }
+      } else {
+        setFormData(prev => ({ ...prev, roomId: "" }));
+      }
+    } else if (formData.roomId) {
+      setFormData(prev => ({ ...prev, roomId: "" }));
+    }
+  }, [formData.checkInDate, formData.checkOutDate, roomsList, bookingsList, formData.roomId]);
+
+  // Reset form khi đóng hộp thoại đặt phòng
+  useEffect(() => {
+    if (!openBookingDialog) {
+      setFormData({
+        customerName: "",
+        customerPhone: "",
+        customerEmail: "",
+        checkInDate: "",
+        checkOutDate: "",
+        guests: 1,
+        roomId: "",
+        bookingSource: "WALK_IN",
+        note: "",
+      });
+    }
+  }, [openBookingDialog]);
 
   const handleCreateBooking = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,8 +245,43 @@ export default function BookingsPage() {
     );
   });
 
-  // Chỉ lấy danh sách phòng trống phục vụ đặt phòng
-  const availableRooms = roomsList.filter(r => r.status === "AVAILABLE");
+  // Lấy danh sách phòng trống không bị trùng lịch đặt phòng trong khoảng thời gian đã chọn
+  const getAvailableRooms = () => {
+    if (!formData.checkInDate || !formData.checkOutDate) {
+      return roomsList.filter(r => r.status === "AVAILABLE");
+    }
+
+    const checkIn = new Date(formData.checkInDate);
+    const checkOut = new Date(formData.checkOutDate);
+
+    if (checkOut <= checkIn) {
+      return [];
+    }
+
+    return roomsList.filter((room) => {
+      // 1. Nếu phòng đang bảo trì hoặc chưa dọn dẹp thì không cho đặt
+      if (room.status === "MAINTENANCE" || room.status === "DIRTY") {
+        return false;
+      }
+
+      // 2. Lọc các phòng bị trùng lịch đặt phòng
+      const hasOverlap = bookingsList.some((booking) => {
+        const isActiveBooking = ["PENDING", "CONFIRMED", "CHECKED_IN"].includes(booking.status);
+        if (!isActiveBooking || booking.roomId !== room.id) {
+          return false;
+        }
+
+        const bCheckIn = new Date(booking.checkInDate);
+        const bCheckOut = new Date(booking.checkOutDate);
+
+        return checkIn < bCheckOut && checkOut > bCheckIn;
+      });
+
+      return !hasOverlap;
+    });
+  };
+
+  const availableRooms = getAvailableRooms();
 
   return (
     <div className="flex h-screen bg-background">
