@@ -1,0 +1,185 @@
+import prisma from "../config/prisma";
+import { Prisma } from "@prisma/client";
+
+// Hàm làm sạch roomTypeId từ frontend (ví dụ "rt-1" -> 1)
+const cleanRoomTypeId = (typeId: string | number): bigint => {
+  if (typeof typeId === "string") {
+    const clean = typeId.replace("rt-", "");
+    return BigInt(clean);
+  }
+  return BigInt(typeId);
+};
+
+export const RoomService = {
+  // 1. Lấy danh sách phòng (kèm theo đặt phòng đang checked-in và bảo trì đang diễn ra)
+  getAllRooms: async () => {
+    const rooms = await prisma.room.findMany({
+      include: {
+        roomType: true,
+        // Lấy thông tin đặt phòng đang hoạt động (đã nhận phòng hoặc đã đặt trước)
+        bookings: {
+          where: {
+            status: {
+              in: ["CHECKED_IN", "CONFIRMED", "PENDING"]
+            }
+          },
+          orderBy: {
+            createdAt: "desc"
+          },
+          take: 1
+        },
+        // Lấy thông tin bảo trì đang hoạt động
+        maintenance: {
+          where: {
+            status: {
+              in: ["IN_PROGRESS", "WAITING_PARTS", "PENDING"]
+            }
+          },
+          take: 1
+        }
+      },
+      orderBy: {
+        roomNumber: "asc",
+      },
+    });
+
+    return rooms.map(room => ({
+      ...room,
+      id: room.id.toString(),
+      roomTypeId: `rt-${room.roomTypeId.toString()}`, // Định dạng lại giống mock frontend ("rt-1")
+      amenities: room.amenities || [], // Tiện nghi riêng biệt của phòng
+      pricePerNight: room.pricePerNight !== null ? Number(room.pricePerNight) : Number(room.roomType.pricePerNight),
+      capacity: room.capacity !== null && room.capacity !== undefined ? room.capacity : room.roomType.capacity,
+      roomType: {
+        ...room.roomType,
+        id: `rt-${room.roomType.id.toString()}`,
+        pricePerNight: Number(room.roomType.pricePerNight),
+        amenities: room.roomType.amenities || []
+      },
+      // Chuyển đổi các BigInt trong mảng bookings và maintenance
+      bookings: room.bookings.map(b => ({
+        ...b,
+        id: b.id.toString(),
+        roomId: b.roomId.toString(),
+        userId: b.userId ? b.userId.toString() : null,
+      })),
+      maintenance: room.maintenance.map(m => ({
+        ...m,
+        id: m.id.toString(),
+        roomId: m.roomId.toString(),
+        staffId: m.staffId ? m.staffId.toString() : null,
+      }))
+    }));
+  },
+
+  // 1.5. Lấy danh sách loại phòng từ database
+  getRoomTypes: async () => {
+    const roomTypes = await prisma.roomType.findMany({
+      orderBy: { id: "asc" }
+    });
+    return roomTypes.map(rt => ({
+      ...rt,
+      id: `rt-${rt.id.toString()}`,
+      pricePerNight: Number(rt.pricePerNight),
+      amenities: rt.amenities || []
+    }));
+  },
+
+  // 2. Tạo phòng mới
+  createRoom: async (data: any) => {
+    const roomTypeIdClean = cleanRoomTypeId(data.roomTypeId);
+
+    const newRoom = await prisma.room.create({
+      data: {
+        roomNumber: data.roomNumber,
+        floor: Number(data.floor),
+        status: data.status || "AVAILABLE",
+        roomTypeId: roomTypeIdClean,
+        note: data.note || "",
+        amenities: data.amenities || [], // Lưu tiện nghi riêng vào phòng
+        pricePerNight: data.pricePerNight ? new Prisma.Decimal(Number(data.pricePerNight)) : null, // Lưu giá riêng vào phòng
+        capacity: data.maxGuests ? Number(data.maxGuests) : null // Lưu công suất riêng vào phòng
+      },
+      include: {
+        roomType: true
+      }
+    });
+
+    return {
+      ...newRoom,
+      id: newRoom.id.toString(),
+      roomTypeId: `rt-${newRoom.roomTypeId.toString()}`,
+      amenities: newRoom.amenities || [], // Tiện nghi của phòng
+      pricePerNight: newRoom.pricePerNight !== null ? Number(newRoom.pricePerNight) : Number(newRoom.roomType.pricePerNight),
+      capacity: newRoom.capacity !== null && newRoom.capacity !== undefined ? newRoom.capacity : newRoom.roomType.capacity,
+      roomType: {
+        ...newRoom.roomType,
+        id: `rt-${newRoom.roomType.id.toString()}`,
+        pricePerNight: Number(newRoom.roomType.pricePerNight),
+        amenities: newRoom.roomType.amenities || []
+      }
+    };
+  },
+
+  // 3. Cập nhật phòng
+  updateRoom: async (id: string, data: any) => {
+    const cleanId = BigInt(id.replace("r-", "")); // Làm sạch room ID nếu frontend gửi "r-101"
+    const roomTypeIdClean = cleanRoomTypeId(data.roomTypeId);
+
+    const updatedRoom = await prisma.room.update({
+      where: { id: cleanId },
+      data: {
+        roomNumber: data.roomNumber,
+        floor: Number(data.floor),
+        status: data.status,
+        roomTypeId: roomTypeIdClean,
+        note: data.note || "",
+        amenities: data.amenities || [], // Lưu tiện nghi riêng vào phòng
+        pricePerNight: data.pricePerNight ? new Prisma.Decimal(Number(data.pricePerNight)) : null, // Lưu giá riêng vào phòng
+        capacity: data.maxGuests ? Number(data.maxGuests) : null // Lưu công suất riêng vào phòng
+      },
+      include: {
+        roomType: true
+      }
+    });
+
+    return {
+      ...updatedRoom,
+      id: updatedRoom.id.toString(),
+      roomTypeId: `rt-${updatedRoom.roomTypeId.toString()}`,
+      amenities: updatedRoom.amenities || [], // Tiện nghi của phòng
+      pricePerNight: updatedRoom.pricePerNight !== null ? Number(updatedRoom.pricePerNight) : Number(updatedRoom.roomType.pricePerNight),
+      capacity: updatedRoom.capacity !== null && updatedRoom.capacity !== undefined ? updatedRoom.capacity : updatedRoom.roomType.capacity,
+      roomType: {
+        ...updatedRoom.roomType,
+        id: `rt-${updatedRoom.roomType.id.toString()}`,
+        pricePerNight: Number(updatedRoom.roomType.pricePerNight),
+        amenities: updatedRoom.roomType.amenities || []
+      }
+    };
+  },
+
+  // 4. Xóa phòng
+  deleteRoom: async (id: string) => {
+    const cleanId = BigInt(id.replace("r-", ""));
+    
+    // Xóa tất cả các bản ghi bảo trì liên quan trước khi xóa phòng để tránh lỗi khóa ngoại
+    await prisma.maintenanceRecord.deleteMany({
+      where: { roomId: cleanId }
+    });
+
+    // Xóa tất cả các booking liên quan trước
+    await prisma.booking.deleteMany({
+      where: { roomId: cleanId }
+    });
+
+    const deletedRoom = await prisma.room.delete({
+      where: { id: cleanId }
+    });
+
+    return {
+      ...deletedRoom,
+      id: deletedRoom.id.toString()
+    };
+  }
+};

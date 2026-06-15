@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Position {
+  id            Int     @id @default(autoincrement())
+  position_name String  @unique
+  description   String?
+  users         User[]
+
+  @@map("positions")
+}
+
+model User {
+  id          BigInt    @id @default(autoincrement())
+  usercode    String    @unique @db.VarChar(50)
+  fullName    String    @map("full_name") @db.VarChar(100)
+  email       String    @unique @db.VarChar(100)
+  password    String    @db.VarChar(255)
+  phoneNumber String?   @unique @map("phone_number") @db.VarChar(20)
+  avatarUrl   String?   @map("avatar_url") @db.VarChar(255)
+  role        String    @db.VarChar(20)
+  status      String    @db.VarChar(20)
+  
+  // Quan hệ với Position
+  positionId  Int?      @map("position_id")
+  position    Position? @relation(fields: [positionId], references: [id])
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Các quan hệ cũ của bạn
+  bookings            Booking[]
+  maintenance         MaintenanceRecord[]
+  financeTransactions FinanceTransaction[]
+
+  @@map("users")
+}
+
+// ================================================================================================================ 
+model RoomType {
+  id            BigInt   @id @default(autoincrement())
+  name          String   @db.VarChar(255)
+  pricePerNight Decimal  @map("price_per_night")
+  capacity      Int
+  description   String?
+  amenities     String[] @default([])
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  rooms Room[]
+
+  @@map("room_types")
+}
+
+model Room {
+  id         BigInt   @id @default(autoincrement())
+  roomNumber String   @unique @map("room_number") @db.VarChar(20)
+  roomTypeId BigInt   @map("room_type_id")
+  floor      Int?
+  status     String   @db.VarChar(30)
+  note       String?
+  amenities  String[] @default([])
+  pricePerNight Decimal? @map("price_per_night") @db.Decimal(12, 2)
+  capacity      Int?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  roomType    RoomType            @relation(fields: [roomTypeId], references: [id])
+  bookings    Booking[]
+  maintenance MaintenanceRecord[]
+
+  @@map("rooms")
+}
+
+model Booking {
+  id            BigInt   @id @default(autoincrement())
+  userId        BigInt?  @map("user_id")
+  roomId        BigInt   @map("room_id")
+  customerName  String   @map("customer_name") @db.VarChar(255)
+  customerPhone String   @map("customer_phone") @db.VarChar(20)
+  customerEmail String?  @map("customer_email") @db.VarChar(255)
+  checkInDate   DateTime @map("check_in_date") @db.Date
+  checkOutDate  DateTime @map("check_out_date") @db.Date
+  totalAmount   Decimal  @default(0) @map("total_amount")
+  status        String   @db.VarChar(50)
+  bookingSource String   @default("WALK_IN") @map("booking_source") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user            User?            @relation(fields: [userId], references: [id])
+  room            Room             @relation(fields: [roomId], references: [id])
+  bookingServices BookingService[]
+  invoice         Invoice?
+
+  @@index([checkInDate])
+  @@index([roomId, checkInDate, checkOutDate])
+  @@map("bookings")
+}
+
+model Service {
+  id        BigInt   @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  price     Decimal
+  unit      String?  @db.VarChar(50)
+  status    String   @default("ACTIVE") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bookingServices BookingService[]
+
+  @@map("services")
+}
+
+model BookingService {
+  id          BigInt   @id @default(autoincrement())
+  bookingId   BigInt   @map("booking_id")
+  serviceId   BigInt   @map("service_id")
+  quantity    Int      @default(1)
+  price       Decimal
+  totalAmount Decimal  @map("total_amount")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@map("booking_services")
+}
+
+model Invoice {
+  id            BigInt   @id @default(autoincrement())
+  invoiceNumber String   @unique @map("invoice_number") @db.VarChar(50)
+  bookingId     BigInt   @unique @map("booking_id")
+  subTotal      Decimal  @default(0) @map("sub_total")
+  taxAmount     Decimal  @default(0) @map("tax_amount")
+  discount      Decimal  @default(0)
+  totalAmount   Decimal  @map("total_amount")
+  status        String   @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  booking  Booking   @relation(fields: [bookingId], references: [id])
+  payments Payment[]
+
+  @@map("invoices")
+}
+
+model Payment {
+  id            BigInt   @id @default(autoincrement())
+  invoiceId     BigInt   @map("invoice_id")
+  amount        Decimal
+  paymentMethod String   @map("payment_method") @db.VarChar(30)
+  paidAt        DateTime @default(now()) @map("paid_at")
+  note          String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("payments")
+}
+
+model MaintenanceRecord {
+  id          BigInt    @id @default(autoincrement())
+  roomId      BigInt    @map("room_id")
+  staffId     BigInt?   @map("staff_id")
+  description String?
+  status      String    @db.VarChar(50)
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  repairCost  Decimal   @default(0) @map("repair_cost")
+  remarks     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  room  Room  @relation(fields: [roomId], references: [id])
+  staff User? @relation(fields: [staffId], references: [id])
+
+  @@map("maintenance_records")
+}
+
+model FinanceTransaction {
+  id          BigInt   @id @default(autoincrement())
+  code        String   @unique @db.VarChar(50)
+  type        String   @db.VarChar(20) // "INCOME" hoặc "EXPENSE"
+  category    String   @db.VarChar(100) // "Tiền phòng", "Dịch vụ", "Bảo trì", "Vật tư", "Khác", v.v.
+  description String?  @db.VarChar(255)
+  amount      Decimal  @db.Decimal(12, 2)
+  date        DateTime @default(now())
+  createdById BigInt   @map("created_by_id")
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("finance_transactions")
+}
