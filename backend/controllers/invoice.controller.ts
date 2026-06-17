@@ -26,6 +26,17 @@ export const InvoiceController = {
     }
   },
 
+  // 2.5. Lấy hóa đơn theo bookingId
+  getInvoiceByBookingId: async (req: Request, res: Response) => {
+    try {
+      const { bookingId } = req.params;
+      const data = await InvoiceService.getInvoiceByBookingId(bookingId);
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ message: "Lỗi khi lấy hóa đơn của đặt phòng: " + error.message });
+    }
+  },
+
   // 3. Lấy đặt phòng chưa lập hóa đơn
   getBookingsWithoutInvoice: async (req: Request, res: Response) => {
     try {

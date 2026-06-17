@@ -63,7 +63,7 @@ function getTypeIcon(type: string) {
 
 export default function FinancePage() {
   const { user: currentUser } = useAuth();
-  const isAdmin = currentUser?.role === "ADMIN";
+  const isAdmin = currentUser?.role === "ADMIN" || currentUser?.role === "SUPERADMIN";
 
   // Data State
   const [transactions, setTransactions] = useState<any[]>([]);

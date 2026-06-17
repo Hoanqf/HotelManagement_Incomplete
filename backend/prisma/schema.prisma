@@ -50,6 +50,20 @@ model RoomType {
   capacity      Int
   description   String?
   amenities     String[] @default([])
+
+  // Pricing rates
+  priceHourly           Decimal @default(0) @map("price_hourly")
+  priceDaily            Decimal @default(0) @map("price_daily")
+  priceOvernight        Decimal @default(0) @map("price_overnight")
+
+  priceHourlyWeekend    Decimal @default(0) @map("price_hourly_weekend")
+  priceDailyWeekend     Decimal @default(0) @map("price_daily_weekend")
+  priceOvernightWeekend Decimal @default(0) @map("price_overnight_weekend")
+
+  priceHourlyHoliday    Decimal @default(0) @map("price_hourly_holiday")
+  priceDailyHoliday     Decimal @default(0) @map("price_daily_holiday")
+  priceOvernightHoliday Decimal @default(0) @map("price_overnight_holiday")
+
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -85,11 +99,13 @@ model Booking {
   customerName  String   @map("customer_name") @db.VarChar(255)
   customerPhone String   @map("customer_phone") @db.VarChar(20)
   customerEmail String?  @map("customer_email") @db.VarChar(255)
-  checkInDate   DateTime @map("check_in_date") @db.Date
-  checkOutDate  DateTime @map("check_out_date") @db.Date
+  checkInDate   DateTime @map("check_in_date")
+  checkOutDate  DateTime @map("check_out_date")
   totalAmount   Decimal  @default(0) @map("total_amount")
   status        String   @db.VarChar(50)
   bookingSource String   @default("WALK_IN") @map("booking_source") @db.VarChar(50)
+  bookingType   String   @default("DAILY") @map("booking_type") @db.VarChar(30)
+  guests        Int      @default(1)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -141,6 +157,7 @@ model Invoice {
   discount      Decimal  @default(0)
   totalAmount   Decimal  @map("total_amount")
   status        String   @db.VarChar(20)
+  processedBy   String?  @map("processed_by") @db.VarChar(100)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -197,4 +214,13 @@ model FinanceTransaction {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("finance_transactions")
+}
+
+model Holiday {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  holidayDate DateTime @unique @map("holiday_date") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("holidays")
 }

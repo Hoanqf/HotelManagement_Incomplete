@@ -1,24 +1,27 @@
 import prisma from "../config/prisma";
 import { Prisma } from "@prisma/client";
 import { InvoiceService } from "./invoice.service";
+import { PricingService } from "./pricing.service";
 
 export const BookingService = {
-  // 1. Lấy danh sách tất cả đặt phòng
+  // 1. Lấy danh sách đặt phòng
   getAllBookings: async () => {
     const bookings = await prisma.booking.findMany({
       include: {
         room: {
           include: {
-            roomType: true,
+            roomType: true
+          }
+        },
+        invoice: {
+          include: {
+            payments: true
           }
         }
       },
-      orderBy: {
-        createdAt: "desc"
-      }
+      orderBy: { createdAt: 'desc' },
     });
 
-    // Chuyển BigInt thành String để tránh lỗi JSON
     return bookings.map(b => ({
       ...b,
       id: b.id.toString(),
@@ -32,7 +35,22 @@ export const BookingService = {
           ...b.room.roomType,
           id: b.room.roomType.id.toString(),
         }
-      }
+      },
+      invoice: b.invoice ? {
+        ...b.invoice,
+        id: b.invoice.id.toString(),
+        bookingId: b.invoice.bookingId.toString(),
+        subTotal: Number(b.invoice.subTotal),
+        taxAmount: Number(b.invoice.taxAmount),
+        discount: Number(b.invoice.discount),
+        totalAmount: Number(b.invoice.totalAmount),
+        payments: b.invoice.payments?.map(p => ({
+          ...p,
+          id: p.id.toString(),
+          invoiceId: p.invoiceId.toString(),
+          amount: Number(p.amount)
+        }))
+      } : null
     }));
   },
 
@@ -47,6 +65,7 @@ export const BookingService = {
       roomId,
       guests,
       bookingSource,
+      bookingType,
       note
     } = data;
 
@@ -84,13 +103,14 @@ export const BookingService = {
       throw new Error("Phòng đã được đặt hoặc đang sử dụng trong khoảng thời gian này");
     }
 
-    const timeDiff = checkOut.getTime() - checkIn.getTime();
-    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-    if (nights <= 0) nights = 1;
-
-    // Tính tổng tiền = đơn giá phòng (hoặc loại phòng mặc định) * số đêm
-    const pricePerNight = room.pricePerNight !== null ? Number(room.pricePerNight) : Number(room.roomType.pricePerNight);
-    const totalAmount = new Prisma.Decimal(pricePerNight * nights);
+    // Tính tổng tiền tự động qua PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      roomId,
+      bookingType || "DAILY",
+      checkIn,
+      checkOut
+    );
+    const totalAmount = new Prisma.Decimal(pricing.subTotal);
 
     // Tạo booking code ngẫu nhiên (Ví dụ: BK-XXXX)
     const randomCode = "BK-" + Math.floor(1000 + Math.random() * 9000);
@@ -106,7 +126,9 @@ export const BookingService = {
         checkOutDate: checkOut,
         totalAmount,
         status: "PENDING", // Mặc định là PENDING
-        bookingSource: bookingSource || "WALK_IN"
+        bookingSource: bookingSource || "WALK_IN",
+        bookingType: bookingType || "DAILY",
+        guests: Number(guests) || 1
       },
       include: {
         room: {
@@ -309,15 +331,14 @@ export const BookingService = {
     
     if (!booking) return;
     
-    // Tính tiền phòng
-    const checkIn = new Date(booking.checkInDate);
-    const checkOut = new Date(booking.checkOutDate);
-    const timeDiff = checkOut.getTime() - checkIn.getTime();
-    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-    if (nights <= 0) nights = 1;
-    
-    const pricePerNight = booking.room.pricePerNight !== null ? Number(booking.room.pricePerNight) : Number(booking.room.roomType.pricePerNight);
-    const roomCharge = pricePerNight * nights;
+    // Tính tiền phòng qua PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      booking.roomId,
+      booking.bookingType,
+      booking.checkInDate,
+      booking.checkOutDate
+    );
+    const roomCharge = pricing.subTotal;
     
     // Tính tiền dịch vụ
     const servicesCharge = booking.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
@@ -328,5 +349,202 @@ export const BookingService = {
         totalAmount: new Prisma.Decimal(roomCharge + servicesCharge)
       }
     });
+  },
+
+  // Gia hạn thời gian ở
+  extendBooking: async (id: string, newCheckOutDate: Date | string) => {
+    const bookingId = BigInt(id);
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId }
+    });
+
+    if (!booking) {
+      throw new Error("Đặt phòng không tồn tại");
+    }
+
+    const checkIn = new Date(booking.checkInDate);
+    const newCheckOut = new Date(newCheckOutDate);
+
+    if (newCheckOut <= checkIn) {
+      throw new Error("Thời gian trả phòng mới phải sau thời gian nhận phòng");
+    }
+
+    // Kiểm tra xem phòng có bị trùng lịch trong khoảng thời gian mới hay không (trừ chính booking này)
+    const conflictingBooking = await prisma.booking.findFirst({
+      where: {
+        roomId: booking.roomId,
+        id: { not: bookingId },
+        status: {
+          in: ["PENDING", "CONFIRMED", "CHECKED_IN"]
+        },
+        checkInDate: {
+          lt: newCheckOut
+        },
+        checkOutDate: {
+          gt: checkIn
+        }
+      }
+    });
+
+    if (conflictingBooking) {
+      throw new Error("Phòng đã được đặt hoặc đang sử dụng bởi khách khác trong khoảng thời gian gia hạn");
+    }
+
+    // Tính toán tiền phòng mới bằng PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      booking.roomId,
+      booking.bookingType,
+      checkIn,
+      newCheckOut
+    );
+
+    // Tính tiền dịch vụ hiện tại để cộng dồn vào Booking.totalAmount
+    const services = await prisma.bookingService.findMany({
+      where: { bookingId }
+    });
+    const servicesCharge = services.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
+    const newTotalAmount = new Prisma.Decimal(pricing.subTotal + servicesCharge);
+
+    // Cập nhật booking
+    const updated = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        checkOutDate: newCheckOut,
+        totalAmount: newTotalAmount
+      },
+      include: {
+        room: { include: { roomType: true } }
+      }
+    });
+
+    // Đồng bộ hóa đơn liên kết nếu có
+    await InvoiceService.syncInvoiceWithBooking(bookingId);
+
+    return {
+      ...updated,
+      id: updated.id.toString(),
+      roomId: updated.roomId.toString(),
+      userId: updated.userId ? updated.userId.toString() : null,
+      room: {
+        ...updated.room,
+        id: updated.room.id.toString(),
+        roomTypeId: updated.room.roomTypeId.toString(),
+        roomType: {
+          ...updated.room.roomType,
+          id: updated.room.roomType.id.toString()
+        }
+      }
+    };
+  },
+
+  // Đổi phòng
+  changeRoom: async (id: string, newRoomId: string) => {
+    const bookingId = BigInt(id);
+    const targetRoomId = BigInt(newRoomId);
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId }
+    });
+
+    if (!booking) {
+      throw new Error("Đặt phòng không tồn tại");
+    }
+
+    const checkIn = new Date(booking.checkInDate);
+    const checkOut = new Date(booking.checkOutDate);
+
+    // Kiểm tra xem phòng mới có bị trùng lịch trong khoảng thời gian này hay không (trừ chính booking này nếu đổi lại cùng phòng cũ)
+    const conflictingBooking = await prisma.booking.findFirst({
+      where: {
+        roomId: targetRoomId,
+        id: { not: bookingId },
+        status: {
+          in: ["PENDING", "CONFIRMED", "CHECKED_IN"]
+        },
+        checkInDate: {
+          lt: checkOut
+        },
+        checkOutDate: {
+          gt: checkIn
+        }
+      }
+    });
+
+    if (conflictingBooking) {
+      throw new Error("Phòng mới đã được đặt hoặc đang sử dụng trong khoảng thời gian này");
+    }
+
+    // Tính toán tiền phòng mới bằng PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      targetRoomId,
+      booking.bookingType,
+      checkIn,
+      checkOut
+    );
+
+    // Tính tiền dịch vụ hiện tại để cộng dồn vào Booking.totalAmount
+    const services = await prisma.bookingService.findMany({
+      where: { bookingId }
+    });
+    const servicesCharge = services.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
+    const newTotalAmount = new Prisma.Decimal(pricing.subTotal + servicesCharge);
+
+    // Cập nhật booking
+    const updated = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        roomId: targetRoomId,
+        totalAmount: newTotalAmount
+      },
+      include: {
+        room: { include: { roomType: true } }
+      }
+    });
+
+    // Lấy thông tin phòng cũ để kiểm tra trạng thái thực tế
+    const currentRoom = await prisma.room.findUnique({
+      where: { id: booking.roomId }
+    });
+
+    const now = new Date();
+    
+    // Nếu booking đã check-in hoặc phòng cũ đang OCCUPIED hoặc lịch ở đã bắt đầu
+    const oldRoomNeedsCleaning = booking.status === "CHECKED_IN" || 
+                                 (currentRoom && currentRoom.status === "OCCUPIED") ||
+                                 ((booking.status === "PENDING" || booking.status === "CONFIRMED") && now >= checkIn);
+
+    if (oldRoomNeedsCleaning) {
+      await prisma.room.update({
+        where: { id: booking.roomId },
+        data: { status: "DIRTY" }
+      });
+    }
+
+    // Cập nhật trạng thái phòng mới sang OCCUPIED chỉ khi booking đã CHECKED_IN
+    if (booking.status === "CHECKED_IN") {
+      await prisma.room.update({
+        where: { id: targetRoomId },
+        data: { status: "OCCUPIED" }
+      });
+    }
+
+    // Đồng bộ hóa đơn liên kết nếu có
+    await InvoiceService.syncInvoiceWithBooking(bookingId);
+
+    return {
+      ...updated,
+      id: updated.id.toString(),
+      roomId: updated.roomId.toString(),
+      userId: updated.userId ? updated.userId.toString() : null,
+      room: {
+        ...updated.room,
+        id: updated.room.id.toString(),
+        roomTypeId: updated.room.roomTypeId.toString(),
+        roomType: {
+          ...updated.room.roomType,
+          id: updated.room.roomType.id.toString()
+        }
+      }
+    };
   }
 };

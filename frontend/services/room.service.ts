@@ -1,5 +1,14 @@
 const API_URL = "http://localhost:5000/api/rooms";
 
+// Helper function to get headers with authentication token
+const getHeaders = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem("token") : null;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {})
+  };
+};
+
 export const RoomAPI = {
   // 1. Lấy danh sách phòng
   getRooms: async () => {
@@ -23,9 +32,7 @@ export const RoomAPI = {
   createRoom: async (data: any) => {
     const res = await fetch(API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
     const result = await res.json();
@@ -39,9 +46,7 @@ export const RoomAPI = {
   updateRoom: async (id: string, data: any) => {
     const res = await fetch(`${API_URL}/${id}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
     const result = await res.json();
@@ -55,6 +60,11 @@ export const RoomAPI = {
   deleteRoom: async (id: string) => {
     const res = await fetch(`${API_URL}/${id}`, {
       method: "DELETE",
+      headers: {
+        ...(typeof window !== 'undefined' && localStorage.getItem("token") 
+          ? { "Authorization": `Bearer ${localStorage.getItem("token")}` } 
+          : {})
+      }
     });
     const result = await res.json();
     if (!res.ok) {

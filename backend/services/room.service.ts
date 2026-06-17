@@ -54,6 +54,15 @@ export const RoomService = {
         ...room.roomType,
         id: `rt-${room.roomType.id.toString()}`,
         pricePerNight: Number(room.roomType.pricePerNight),
+        priceHourly: Number(room.roomType.priceHourly || 0),
+        priceDaily: Number(room.roomType.priceDaily || 0),
+        priceOvernight: Number(room.roomType.priceOvernight || 0),
+        priceHourlyWeekend: Number(room.roomType.priceHourlyWeekend || 0),
+        priceDailyWeekend: Number(room.roomType.priceDailyWeekend || 0),
+        priceOvernightWeekend: Number(room.roomType.priceOvernightWeekend || 0),
+        priceHourlyHoliday: Number(room.roomType.priceHourlyHoliday || 0),
+        priceDailyHoliday: Number(room.roomType.priceDailyHoliday || 0),
+        priceOvernightHoliday: Number(room.roomType.priceOvernightHoliday || 0),
         amenities: room.roomType.amenities || []
       },
       // Chuyển đổi các BigInt trong mảng bookings và maintenance
@@ -81,6 +90,15 @@ export const RoomService = {
       ...rt,
       id: `rt-${rt.id.toString()}`,
       pricePerNight: Number(rt.pricePerNight),
+      priceHourly: Number(rt.priceHourly || 0),
+      priceDaily: Number(rt.priceDaily || 0),
+      priceOvernight: Number(rt.priceOvernight || 0),
+      priceHourlyWeekend: Number(rt.priceHourlyWeekend || 0),
+      priceDailyWeekend: Number(rt.priceDailyWeekend || 0),
+      priceOvernightWeekend: Number(rt.priceOvernightWeekend || 0),
+      priceHourlyHoliday: Number(rt.priceHourlyHoliday || 0),
+      priceDailyHoliday: Number(rt.priceDailyHoliday || 0),
+      priceOvernightHoliday: Number(rt.priceOvernightHoliday || 0),
       amenities: rt.amenities || []
     }));
   },

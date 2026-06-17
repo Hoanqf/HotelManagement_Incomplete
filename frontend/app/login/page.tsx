@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Hotel, Lock, Mail, Loader2, Eye, EyeOff } from "lucide-react";
+import { Hotel, Lock, User, Loader2, Eye, EyeOff } from "lucide-react";
 import { UserAPI } from "@/services/user.service";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
@@ -14,12 +14,12 @@ export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [formData, setFormData] = useState({ username: "", password: "" });
   const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.email || !formData.password) {
+    if (!formData.username || !formData.password) {
       return toast.error("Vui lòng nhập đầy đủ thông tin");
     }
 
@@ -56,15 +56,15 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
+              <label className="text-sm font-medium">Tên đăng nhập</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 size-4 text-muted-foreground" />
+                <User className="absolute left-3 top-3 size-4 text-muted-foreground" />
                 <Input 
-                  type="email" 
-                  placeholder="admin@gmail.com" 
+                  type="text" 
+                  placeholder="superadmin hoặc admin" 
                   className="pl-9" 
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  value={formData.username}
+                  onChange={(e) => setFormData({...formData, username: e.target.value})}
                 />
               </div>
             </div>

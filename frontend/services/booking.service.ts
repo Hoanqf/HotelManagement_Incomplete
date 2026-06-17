@@ -77,5 +77,37 @@ export const BookingAPI = {
       throw new Error(result.message || "Không thể xóa dịch vụ");
     }
     return result;
+  },
+
+  // 7. Gia hạn đặt phòng
+  extendBooking: async (id: string, checkOutDate: string) => {
+    const res = await fetch(`${API_URL}/${id}/extend`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ checkOutDate }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || "Không thể gia hạn phòng");
+    }
+    return result;
+  },
+
+  // 8. Đổi phòng
+  changeRoom: async (id: string, newRoomId: string) => {
+    const res = await fetch(`${API_URL}/${id}/change-room`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ newRoomId }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || "Không thể đổi phòng");
+    }
+    return result;
   }
 };

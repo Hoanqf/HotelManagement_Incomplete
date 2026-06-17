@@ -64,14 +64,14 @@ export const UserController = {
         return res.status(401).json({ message: "Yêu cầu đăng nhập trước" });
       }
 
-      // Nếu không phải ADMIN và cố cập nhật tài khoản người khác -> Chặn
-      if (authUser.role !== "ADMIN" && authUser.id !== targetId) {
+      // Nếu không phải ADMIN/SUPERADMIN và cố cập nhật tài khoản người khác -> Chặn
+      if (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN" && authUser.id !== targetId) {
         return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa tài khoản của người khác" });
       }
 
-      // Nếu không phải ADMIN tự cập nhật chính mình -> Lọc bỏ role và status để tránh leo thang đặc quyền
+      // Nếu không phải ADMIN/SUPERADMIN tự cập nhật chính mình -> Lọc bỏ role và status để tránh leo thang đặc quyền
       const updateData = { ...req.body };
-      if (authUser.role !== "ADMIN") {
+      if (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN") {
         delete updateData.role;
         delete updateData.status;
       }
@@ -116,7 +116,7 @@ login: async (req: Request, res: Response) => {
 delete: async (req: Request, res: Response) => {
   try {
     const authUser = (req as any).user;
-    if (!authUser || authUser.role !== "ADMIN") {
+    if (!authUser || (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN")) {
       return res.status(403).json({ message: "Chỉ Quản trị viên mới được phép xóa tài khoản" });
     }
 

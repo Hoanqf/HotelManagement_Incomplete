@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { InvoiceAPI } from "@/services/invoice.service";
 import {
   Dialog,
@@ -89,6 +90,7 @@ function getPaymentMethodLabel(method: string) {
 }
 
 export default function InvoicesPage() {
+  const { user } = useAuth();
   const [invoicesList, setInvoicesList] = useState<any[]>([]);
   const [bookingsWithoutInvoice, setBookingsWithoutInvoice] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,6 +170,7 @@ export default function InvoicesPage() {
         discount: Number(discountAmount),
         status: invoiceStatus,
         paymentMethod: invoiceStatus === "PAID" ? paymentMethod : undefined,
+        processedBy: user?.fullName || "Hệ thống",
       });
 
       toast.success("Tạo hóa đơn thành công!");
@@ -211,6 +214,7 @@ export default function InvoicesPage() {
         amount: Number(payAmount),
         paymentMethod: payMethod,
         note: payNote,
+        processedBy: user?.fullName || "Hệ thống",
       });
 
       toast.success("Thanh toán hóa đơn thành công!");
@@ -275,7 +279,11 @@ export default function InvoicesPage() {
           <p className="text-xs text-muted-foreground">Điện thoại: 0987.654.321 | Email: contact@pmsluxury.com</p>
           <div className="mt-4 text-lg font-bold tracking-tight uppercase">Hóa Đơn Thanh Toán</div>
           <p className="text-xs font-mono text-muted-foreground">Số: {invoice.invoiceNumber}</p>
-          <p className="text-xs text-muted-foreground">Ngày lập: {formatDate(invoice.createdAt)}</p>
+          <div className="flex justify-center gap-4 text-xs text-muted-foreground mt-1">
+            <span>Ngày lập: {formatDate(invoice.createdAt)}</span>
+            <span>•</span>
+            <span>Nhân viên tính: <span className="font-semibold text-foreground">{invoice.processedBy || "Hệ thống"}</span></span>
+          </div>
         </div>
 
         {/* Customer Information */}
@@ -312,39 +320,67 @@ export default function InvoicesPage() {
             </thead>
             <tbody>
               {/* Room Charge Row */}
-              <tr className="border-b">
-                <td className="py-2.5">
-                  <div>Tiền phòng lưu trú</div>
-                  <div className="text-[10px] text-muted-foreground">
-                    Từ {formatDate(invoice.booking?.checkInDate)} đến {formatDate(invoice.booking?.checkOutDate)}
-                  </div>
-                </td>
-                <td className="py-2.5 text-center">Đêm</td>
-                <td className="py-2.5 text-center">
-                  {(() => {
-                    const checkIn = new Date(invoice.booking?.checkInDate);
-                    const checkOut = new Date(invoice.booking?.checkOutDate);
-                    const timeDiff = checkOut.getTime() - checkIn.getTime();
-                    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-                    return nights <= 0 ? 1 : nights;
-                  })()}
-                </td>
-                <td className="py-2.5 text-right">
-                  {formatCurrency(invoice.booking?.room?.roomType?.pricePerNight || 0)}
-                </td>
-                <td className="py-2.5 text-right font-medium">
-                  {formatCurrency(
-                    (() => {
-                      const checkIn = new Date(invoice.booking?.checkInDate);
-                      const checkOut = new Date(invoice.booking?.checkOutDate);
-                      const timeDiff = checkOut.getTime() - checkIn.getTime();
-                      let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-                      if (nights <= 0) nights = 1;
-                      return (invoice.booking?.room?.roomType?.pricePerNight || 0) * nights;
-                    })()
-                  )}
-                </td>
-              </tr>
+              {(() => {
+                const isHourly = invoice.booking?.bookingType === "HOURLY";
+                const isOvernight = invoice.booking?.bookingType === "OVERNIGHT";
+                
+                const servicesCharge = invoice.booking?.bookingServices?.reduce((sum: number, bs: any) => sum + Number(bs.totalAmount), 0) || 0;
+                const roomCharge = Math.max(0, Number(invoice.subTotal) - servicesCharge);
+                
+                const checkIn = new Date(invoice.booking?.checkInDate);
+                const checkOut = new Date(invoice.booking?.checkOutDate);
+                let qty = 1;
+                let unitLabel = "Đêm";
+                let typeLabel = "Tiền phòng lưu trú";
+
+                const formatDateTime = (dateStr: string) => {
+                  if (!dateStr) return "";
+                  const date = new Date(dateStr);
+                  const day = String(date.getDate()).padStart(2, "0");
+                  const month = String(date.getMonth() + 1).padStart(2, "0");
+                  const year = date.getFullYear();
+                  const hours = String(date.getHours()).padStart(2, "0");
+                  const minutes = String(date.getMinutes()).padStart(2, "0");
+                  return `${hours}:${minutes} ${day}/${month}/${year}`;
+                };
+
+                if (isHourly) {
+                  const diffMs = checkOut.getTime() - checkIn.getTime();
+                  qty = Math.ceil(diffMs / (1000 * 60 * 60));
+                  if (qty <= 0) qty = 1;
+                  unitLabel = "Giờ";
+                  typeLabel = "Tiền phòng lưu trú (Theo giờ)";
+                } else if (isOvernight) {
+                  const timeDiff = checkOut.getTime() - checkIn.getTime();
+                  qty = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                  if (qty <= 0) qty = 1;
+                  unitLabel = "Đêm";
+                  typeLabel = "Tiền phòng lưu trú (Qua đêm)";
+                } else {
+                  const timeDiff = checkOut.getTime() - checkIn.getTime();
+                  qty = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                  if (qty <= 0) qty = 1;
+                  unitLabel = "Đêm";
+                  typeLabel = "Tiền phòng lưu trú (Theo ngày)";
+                }
+                
+                const unitPrice = qty > 0 ? roomCharge / qty : roomCharge;
+
+                return (
+                  <tr className="border-b">
+                    <td className="py-2.5">
+                      <div>{typeLabel}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Từ {formatDateTime(invoice.booking?.checkInDate)} đến {formatDateTime(invoice.booking?.checkOutDate)}
+                      </div>
+                    </td>
+                    <td className="py-2.5 text-center">{unitLabel}</td>
+                    <td className="py-2.5 text-center">{qty}</td>
+                    <td className="py-2.5 text-right">{formatCurrency(unitPrice)}</td>
+                    <td className="py-2.5 text-right font-medium">{formatCurrency(roomCharge)}</td>
+                  </tr>
+                );
+              })()}
 
               {/* Services Rows */}
               {invoice.booking?.bookingServices && invoice.booking.bookingServices.map((bs: any) => (
@@ -366,10 +402,7 @@ export default function InvoicesPage() {
             <span className="text-muted-foreground">Cộng tiền phòng & dịch vụ:</span>
             <span className="font-medium">{formatCurrency(invoice.subTotal)}</span>
           </div>
-          <div className="flex justify-between w-64">
-            <span className="text-muted-foreground">Thuế VAT (10%):</span>
-            <span className="font-medium">{formatCurrency(invoice.taxAmount)}</span>
-          </div>
+
           {invoice.discount > 0 && (
             <div className="flex justify-between w-64 text-red-600 dark:text-red-400">
               <span>Giảm giá / Khấu trừ:</span>
@@ -615,6 +648,7 @@ export default function InvoicesPage() {
                         <th className="p-4 text-left font-semibold">Tổng tiền</th>
                         <th className="p-4 text-left font-semibold">Hình thức</th>
                         <th className="p-4 text-left font-semibold">Trạng thái</th>
+                        <th className="p-4 text-left font-semibold">Nhân viên tính</th>
                         <th className="p-4 text-right font-semibold">Thao tác</th>
                       </tr>
                     </thead>
@@ -655,6 +689,9 @@ export default function InvoicesPage() {
                             <Badge className={getStatusClass(inv.status)}>
                               {getStatusLabel(inv.status)}
                             </Badge>
+                          </td>
+                          <td className="p-4 text-xs font-medium text-muted-foreground">
+                            {inv.processedBy || "Hệ thống"}
                           </td>
                           <td className="p-4">
                             <div className="flex justify-end gap-2">
@@ -793,11 +830,6 @@ export default function InvoicesPage() {
                     <span>{formatCurrency(selectedBookingDetails.subTotal)}</span>
                   </div>
 
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Thuế VAT (10%)</span>
-                    <span>{formatCurrency(selectedBookingDetails.taxAmount)}</span>
-                  </div>
-
                   <div className="flex justify-between items-center text-sm pt-1">
                     <Label htmlFor="discount-input">Giảm giá / Khấu trừ (VND)</Label>
                     <Input
@@ -814,7 +846,7 @@ export default function InvoicesPage() {
                     <span>Tổng tiền hóa đơn</span>
                     <span>
                       {formatCurrency(
-                        Math.max(0, selectedBookingDetails.subTotal + selectedBookingDetails.taxAmount - discountAmount)
+                        Math.max(0, selectedBookingDetails.subTotal - discountAmount)
                       )}
                     </span>
                   </div>

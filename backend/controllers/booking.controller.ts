@@ -96,5 +96,45 @@ export const BookingController = {
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
+  },
+
+  // 7. Gia hạn đặt phòng
+  extend: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { checkOutDate } = req.body;
+
+      if (!checkOutDate) {
+        return res.status(400).json({ message: "Thời gian trả phòng mới không được bỏ trống" });
+      }
+
+      const result = await BookingService.extendBooking(id, checkOutDate);
+      res.json({
+        message: "Gia hạn đặt phòng thành công",
+        data: result
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  },
+
+  // 8. Đổi phòng
+  changeRoom: async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { newRoomId } = req.body;
+
+      if (!newRoomId) {
+        return res.status(400).json({ message: "Mã phòng mới không được bỏ trống" });
+      }
+
+      const result = await BookingService.changeRoom(id, newRoomId);
+      res.json({
+        message: "Đổi phòng thành công",
+        data: result
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
   }
 };

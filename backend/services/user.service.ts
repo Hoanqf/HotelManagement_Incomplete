@@ -8,6 +8,11 @@ export const UserService = {
   // 1. Lấy danh sách user
   getAllUsers: async () => {
     const users = await prisma.user.findMany({
+      where: {
+        NOT: {
+          role: "SUPERADMIN"
+        }
+      },
       select: {
         id: true,
         usercode: true,
@@ -118,20 +123,34 @@ export const UserService = {
   },
 
   // 7. Hàm đăng nhập
-  login: async ({ email, password }: any) => {
+  login: async (loginData: any) => {
+    const { password } = loginData;
+    const loginIdentifier = loginData.username || loginData.email || "";
+
+    if (!loginIdentifier || !password) {
+      throw new Error("Thiếu tên đăng nhập hoặc mật khẩu");
+    }
+
     // 1. Lấy cấu hình từ .env
     const envAdminEmail = process.env.ADMIN_EMAIL;
     const envAdminPass = process.env.ADMIN_PASSWORD;
 
     // 2. CÁCH 1: KIỂM TRA TÀI KHOẢN TRONG .ENV TRƯỚC
-    if (envAdminEmail && email === envAdminEmail && password === envAdminPass) {
+    const isEnvAdmin = (envAdminEmail && (loginIdentifier === envAdminEmail || loginIdentifier === "admin" || loginIdentifier === "ADMIN-SYSTEM")) && password === envAdminPass;
+
+    if (isEnvAdmin) {
       console.log("--- Đăng nhập bằng quyền Admin (.env) ---");
       
       let dbAdmin = null;
       try {
         // Thử tìm admin trong database xem có sẵn chưa
-        dbAdmin = await prisma.user.findUnique({
-          where: { email: envAdminEmail },
+        dbAdmin = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: envAdminEmail },
+              { usercode: "ADMIN-SYSTEM" }
+            ]
+          },
           include: { position: true }
         });
       } catch (dbError) {
@@ -213,14 +232,19 @@ export const UserService = {
     }
 
     // 3. CÁCH 2: NẾU KHÔNG PHẢI TÀI KHOẢN .ENV -> TÌM TRONG SQL DATABASE
-    const user = await prisma.user.findUnique({ 
-      where: { email },
+    const user = await prisma.user.findFirst({ 
+      where: {
+        OR: [
+          { email: loginIdentifier },
+          { usercode: loginIdentifier }
+        ]
+      },
       include: { position: true }
     });
 
     // Nếu không tìm thấy trong cả .env và Database
     if (!user) {
-      throw new Error("Email không tồn tại trong hệ thống");
+      throw new Error("Tên đăng nhập hoặc Email không tồn tại trong hệ thống");
     }
 
     // Kiểm tra trạng thái tài khoản

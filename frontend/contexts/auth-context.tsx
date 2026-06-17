@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsedUser);
 
         // --- ROUTING GUARD ---
-        if (pathname.startsWith("/users") && parsedUser.role !== "ADMIN") {
+        if (pathname.startsWith("/users") && parsedUser.role !== "ADMIN" && parsedUser.role !== "SUPERADMIN") {
           toast.error("Bạn không có quyền truy cập trang quản lý tài khoản!");
           router.replace("/dashboard");
           return;

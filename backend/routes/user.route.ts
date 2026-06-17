@@ -14,12 +14,12 @@ router.get("/cloudinary-config", UserController.getCloudinaryConfig);
 router.get("/:id", UserController.getById);
 router.put("/:id", UserController.update);
 
-// Các route chỉ dành cho ADMIN hoặc MANAGER
-router.post("/positions", requireRole(["ADMIN", "MANAGER"]), UserController.createPosition);
+// Các route chỉ dành cho ADMIN hoặc MANAGER hoặc SUPERADMIN
+router.post("/positions", requireRole(["ADMIN", "MANAGER", "SUPERADMIN"]), UserController.createPosition);
 
-// Các route chỉ dành riêng cho ADMIN
-router.get("/", requireRole(["ADMIN"]), UserController.getUsers);
-router.post("/", requireRole(["ADMIN"]), UserController.create);
-router.delete("/:id", requireRole(["ADMIN"]), UserController.delete);
+// Các route chỉ dành riêng cho ADMIN hoặc SUPERADMIN
+router.get("/", requireRole(["ADMIN", "SUPERADMIN"]), UserController.getUsers);
+router.post("/", requireRole(["ADMIN", "SUPERADMIN"]), UserController.create);
+router.delete("/:id", requireRole(["ADMIN", "SUPERADMIN"]), UserController.delete);
 
 export default router;

@@ -14,6 +14,9 @@ export interface RoomType {
   pricePerNight: number;
   capacity: number;
   amenities: string[];
+  priceHourly?: number;
+  priceDaily?: number;
+  priceOvernight?: number;
 }
 
 // Room Entity
@@ -23,6 +26,11 @@ export interface Room {
   status: RoomStatus;
   roomTypeId: string;
   floor: number;
+  pricePerNight?: number;
+  capacity?: number;
+  note?: string;
+  bookings?: any[];
+  maintenance?: any[];
 }
 
 // Booking Entity

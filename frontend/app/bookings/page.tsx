@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { RoomAPI } from "@/services/room.service";
 import { BookingAPI } from "@/services/booking.service";
+import { InvoiceAPI } from "@/services/invoice.service";
+import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -70,7 +72,31 @@ function getStatusClass(status: string) {
 }
 
 export default function BookingsPage() {
+  const { user } = useAuth();
   const [openBookingDialog, setOpenBookingDialog] = useState(false);
+  const [openCheckoutPaymentDialog, setOpenCheckoutPaymentDialog] = useState(false);
+  const [checkoutInvoice, setCheckoutInvoice] = useState<any>(null);
+  const [checkoutPayAmount, setCheckoutPayAmount] = useState(0);
+  const [checkoutPayMethod, setCheckoutPayMethod] = useState("CASH");
+  const [checkoutPayNote, setCheckoutPayNote] = useState("Thanh toán khi trả phòng");
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+
+  // States for confirmation dialogs
+  const [openCancelDialog, setOpenCancelDialog] = useState(false);
+  const [selectedCancelBooking, setSelectedCancelBooking] = useState<any>(null);
+  const [cancelReason, setCancelReason] = useState("Khách hủy lịch");
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
+  const [openCheckInDialog, setOpenCheckInDialog] = useState(false);
+  const [selectedCheckInBooking, setSelectedCheckInBooking] = useState<any>(null);
+  const [checkInNote, setCheckInNote] = useState("Nhận phòng");
+  const [checkInSubmitting, setCheckInSubmitting] = useState(false);
+
+  const [openPaidCheckoutDialog, setOpenPaidCheckoutDialog] = useState(false);
+  const [selectedPaidCheckoutBooking, setSelectedPaidCheckoutBooking] = useState<any>(null);
+  const [paidCheckoutNote, setPaidCheckoutNote] = useState("Trả phòng hoàn tất");
+  const [paidCheckoutSubmitting, setPaidCheckoutSubmitting] = useState(false);
+
   const [bookingsList, setBookingsList] = useState<any[]>([]);
   const [roomsList, setRoomsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +114,7 @@ export default function BookingsPage() {
     guests: 1,
     roomId: "",
     bookingSource: "WALK_IN",
+    bookingType: "DAILY",
     note: "",
   });
 
@@ -161,6 +188,7 @@ export default function BookingsPage() {
         guests: 1,
         roomId: "",
         bookingSource: "WALK_IN",
+        bookingType: "DAILY",
         note: "",
       });
     }
@@ -217,6 +245,136 @@ export default function BookingsPage() {
       } catch (error: any) {
         toast.error(error.message || "Không thể cập nhật trạng thái");
       }
+    }
+  };
+
+  const handleCancelClick = (booking: any) => {
+    setSelectedCancelBooking(booking);
+    setCancelReason("Khách hủy lịch");
+    setOpenCancelDialog(true);
+  };
+
+  const handleCancelSubmit = async () => {
+    if (!selectedCancelBooking) return;
+    setCancelSubmitting(true);
+    try {
+      await BookingAPI.updateBookingStatus(selectedCancelBooking.id, "CANCELLED");
+      toast.success("Hủy đặt phòng thành công!");
+      window.dispatchEvent(new Event("refresh-notifications"));
+      setOpenCancelDialog(false);
+      setSelectedCancelBooking(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Không thể hủy đặt phòng");
+    } finally {
+      setCancelSubmitting(false);
+    }
+  };
+
+  const handleCheckInClick = (booking: any) => {
+    setSelectedCheckInBooking(booking);
+    setCheckInNote("Nhận phòng");
+    setOpenCheckInDialog(true);
+  };
+
+  const handleCheckInSubmit = async () => {
+    if (!selectedCheckInBooking) return;
+    setCheckInSubmitting(true);
+    try {
+      await BookingAPI.updateBookingStatus(selectedCheckInBooking.id, "CHECKED_IN");
+      toast.success("Nhận phòng thành công!");
+      window.dispatchEvent(new Event("refresh-notifications"));
+      setOpenCheckInDialog(false);
+      setSelectedCheckInBooking(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Không thể nhận phòng");
+    } finally {
+      setCheckInSubmitting(false);
+    }
+  };
+
+  const handlePaidCheckoutSubmit = async () => {
+    if (!selectedPaidCheckoutBooking) return;
+    setPaidCheckoutSubmitting(true);
+    try {
+      await BookingAPI.updateBookingStatus(selectedPaidCheckoutBooking.id, "CHECKED_OUT");
+      toast.success("Trả phòng thành công!");
+      window.dispatchEvent(new Event("refresh-notifications"));
+      setOpenPaidCheckoutDialog(false);
+      setSelectedPaidCheckoutBooking(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Không thể cập nhật trạng thái");
+    } finally {
+      setPaidCheckoutSubmitting(false);
+    }
+  };
+
+  const handleCheckoutClick = async (booking: any) => {
+    let invoice = booking.invoice;
+    if (!invoice) {
+      setLoading(true);
+      try {
+        const res = await InvoiceAPI.createInvoice({
+          bookingId: booking.id,
+          status: "UNPAID",
+          discount: 0,
+          processedBy: user?.fullName || "Hệ thống"
+        });
+        invoice = res.data;
+      } catch (error: any) {
+        toast.error(error.message || "Không thể tạo hóa đơn cho phòng này");
+        setLoading(false);
+        return;
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    const totalAmt = Number(invoice.totalAmount);
+    const totalPaidAmt = invoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0;
+    const remainingAmt = Math.max(0, totalAmt - totalPaidAmt);
+
+    if (remainingAmt <= 0) {
+      setSelectedPaidCheckoutBooking(booking);
+      setPaidCheckoutNote("Trả phòng hoàn tất");
+      setOpenPaidCheckoutDialog(true);
+    } else {
+      setSelectedBooking(booking);
+      setCheckoutInvoice(invoice);
+      setCheckoutPayAmount(remainingAmt);
+      setCheckoutPayMethod("CASH");
+      setCheckoutPayNote("Thanh toán khi trả phòng");
+      setOpenCheckoutPaymentDialog(true);
+    }
+  };
+
+  const handleCheckoutPaymentSubmit = async () => {
+    if (!checkoutInvoice || !selectedBooking) return;
+    setCheckoutSubmitting(true);
+    try {
+      // 1. Thực hiện thanh toán hóa đơn
+      await InvoiceAPI.payInvoice(checkoutInvoice.id, {
+        amount: Number(checkoutPayAmount),
+        paymentMethod: checkoutPayMethod,
+        note: checkoutPayNote || "Thanh toán khi trả phòng",
+        processedBy: user?.fullName || "Hệ thống"
+      });
+
+      // 2. Cập nhật trạng thái check-out cho phòng
+      await BookingAPI.updateBookingStatus(selectedBooking.id, "CHECKED_OUT");
+
+      toast.success("Thanh toán & Trả phòng thành công!");
+      window.dispatchEvent(new Event("refresh-notifications"));
+      setOpenCheckoutPaymentDialog(false);
+      setSelectedBooking(null);
+      setCheckoutInvoice(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || "Lỗi khi xử lý thanh toán & trả phòng");
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -282,6 +440,41 @@ export default function BookingsPage() {
   };
 
   const availableRooms = getAvailableRooms();
+
+  const getEstimatedPrice = () => {
+    if (!formData.roomId || !formData.checkInDate || !formData.checkOutDate) return null;
+    const room = roomsList.find(r => r.id === formData.roomId);
+    if (!room) return null;
+    
+    const rt = room.roomType;
+    const checkIn = new Date(formData.checkInDate);
+    const checkOut = new Date(formData.checkOutDate);
+    if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) return null;
+
+    const priceHourly = Number(rt.priceHourly || rt.pricePerNight / 10 || 0);
+    const priceDaily = Number(rt.priceDaily || rt.pricePerNight || 0);
+    const priceOvernight = Number(rt.priceOvernight || rt.pricePerNight * 0.7 || 0);
+
+    if (formData.bookingType === "HOURLY") {
+      const diffMs = checkOut.getTime() - checkIn.getTime();
+      let hours = Math.ceil(diffMs / (1000 * 60 * 60));
+      if (hours <= 0) hours = 1;
+      return {
+        amount: priceHourly * hours,
+        label: `${hours} giờ x ${formatCurrency(priceHourly)}/giờ`
+      };
+    } else {
+      const timeDiff = checkOut.getTime() - checkIn.getTime();
+      let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      if (nights <= 0) nights = 1;
+      const rate = formData.bookingType === "OVERNIGHT" ? priceOvernight : priceDaily;
+      const labelStr = formData.bookingType === "OVERNIGHT" ? "đêm" : "ngày";
+      return {
+        amount: rate * nights,
+        label: `${nights} ${labelStr} x ${formatCurrency(rate)}/${labelStr}`
+      };
+    }
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -457,7 +650,7 @@ export default function BookingsPage() {
                                   variant="outline"
                                   size="sm"
                                   className="text-green-600 border-green-200 hover:bg-green-50"
-                                  onClick={() => handleUpdateStatus(booking.id, "CHECKED_IN")}
+                                  onClick={() => handleCheckInClick(booking)}
                                 >
                                   <LogIn className="mr-1 size-4" />
                                   Nhận phòng
@@ -469,7 +662,7 @@ export default function BookingsPage() {
                                   variant="outline"
                                   size="sm"
                                   className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                                  onClick={() => handleUpdateStatus(booking.id, "CHECKED_OUT")}
+                                  onClick={() => handleCheckoutClick(booking)}
                                 >
                                   <LogOut className="mr-1 size-4" />
                                   Trả phòng
@@ -480,7 +673,7 @@ export default function BookingsPage() {
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => handleUpdateStatus(booking.id, "CANCELLED")}
+                                  onClick={() => handleCancelClick(booking)}
                                 >
                                   <XCircle className="mr-1 size-4" />
                                   Hủy đặt
@@ -540,12 +733,29 @@ export default function BookingsPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="checkInDate">Ngày nhận phòng <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="bookingType">Hình thức thuê</Label>
+                    <Select
+                      value={formData.bookingType}
+                      onValueChange={(val) => setFormData({ ...formData, bookingType: val })}
+                    >
+                      <SelectTrigger id="bookingType">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="DAILY">Theo ngày</SelectItem>
+                        <SelectItem value="HOURLY">Theo giờ</SelectItem>
+                        <SelectItem value="OVERNIGHT">Qua đêm</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="checkInDate">Giờ/Ngày nhận <span className="text-red-500">*</span></Label>
                     <Input
                       id="checkInDate"
-                      type="date"
+                      type="datetime-local"
                       value={formData.checkInDate}
                       onChange={(e) => setFormData({ ...formData, checkInDate: e.target.value })}
                       required
@@ -553,10 +763,10 @@ export default function BookingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="checkOutDate">Ngày trả phòng <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="checkOutDate">Giờ/Ngày trả <span className="text-red-500">*</span></Label>
                     <Input
                       id="checkOutDate"
-                      type="date"
+                      type="datetime-local"
                       value={formData.checkOutDate}
                       onChange={(e) => setFormData({ ...formData, checkOutDate: e.target.value })}
                       required
@@ -595,6 +805,29 @@ export default function BookingsPage() {
                     </Select>
                   </div>
                 </div>
+
+                {(() => {
+                  const est = getEstimatedPrice();
+                  if (!est) return null;
+                  return (
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs space-y-1">
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Hình thức thuê:</span>
+                        <span className="font-semibold text-foreground">
+                          {formData.bookingType === "HOURLY" ? "Theo giờ" : formData.bookingType === "OVERNIGHT" ? "Qua đêm" : "Theo ngày"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Chi tiết tạm tính:</span>
+                        <span className="font-semibold text-foreground">{est.label}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-sm text-primary border-t pt-1.5 mt-1">
+                        <span>Tiền phòng (tạm tính):</span>
+                        <span>{formatCurrency(est.amount)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-2">
                   <Label htmlFor="bookingSource">Nguồn đặt phòng</Label>
@@ -724,6 +957,373 @@ export default function BookingsPage() {
 
               <DialogFooter>
                 <Button onClick={() => setOpenDetailDialog(false)}>Đóng</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog Thanh toán & Trả phòng */}
+          <Dialog open={openCheckoutPaymentDialog} onOpenChange={setOpenCheckoutPaymentDialog}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2 text-primary">
+                  <span>💰</span> Hóa đơn thanh toán - Phòng {selectedBooking?.room?.roomNumber}
+                </DialogTitle>
+              </DialogHeader>
+
+              {checkoutInvoice && (
+                <div className="space-y-4 py-4 text-sm">
+                  {/* Tóm tắt hóa đơn */}
+                  <div className="border rounded-xl p-4 bg-muted/30 space-y-2.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Mã hóa đơn:</span>
+                      <span className="font-mono font-bold">{checkoutInvoice.invoiceNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Khách hàng:</span>
+                      <span className="font-semibold">{selectedBooking?.customerName}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2">
+                      <span className="text-muted-foreground">Tổng tiền hóa đơn:</span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(Number(checkoutInvoice.totalAmount))}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Đã thanh toán trước đó:</span>
+                      <span className="font-semibold text-emerald-600">
+                        {formatCurrency(
+                          checkoutInvoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2 font-bold text-primary text-base">
+                      <span>Số tiền còn thiếu:</span>
+                      <span>
+                        {formatCurrency(
+                          Math.max(
+                            0,
+                            Number(checkoutInvoice.totalAmount) -
+                              (checkoutInvoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0)
+                          )
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Form thanh toán */}
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-1.5 text-left">
+                      <Label htmlFor="checkout-pay-amt" className="text-xs font-semibold">
+                        Số tiền thanh toán thực tế (VND) <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="checkout-pay-amt"
+                        type="number"
+                        value={checkoutPayAmount}
+                        onChange={(e) => setCheckoutPayAmount(Number(e.target.value))}
+                        min={1000}
+                        max={Math.max(
+                          0,
+                          Number(checkoutInvoice.totalAmount) -
+                            (checkoutInvoice.payments?.reduce((sum: number, p: any) => sum + Number(p.amount), 0) || 0)
+                        )}
+                        className="font-bold text-base"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 text-left">
+                      <Label htmlFor="checkout-pay-method" className="text-xs font-semibold">
+                        Phương thức thanh toán <span className="text-red-500">*</span>
+                      </Label>
+                      <Select value={checkoutPayMethod} onValueChange={(val: any) => setCheckoutPayMethod(val)}>
+                        <SelectTrigger id="checkout-pay-method">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="CASH">Tiền mặt</SelectItem>
+                          <SelectItem value="TRANSFER">Chuyển khoản</SelectItem>
+                          <SelectItem value="CARD">Thẻ ngân hàng</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5 text-left">
+                      <Label htmlFor="checkout-pay-note" className="text-xs font-semibold">
+                        Ghi chú
+                      </Label>
+                      <Input
+                        id="checkout-pay-note"
+                        value={checkoutPayNote}
+                        onChange={(e) => setCheckoutPayNote(e.target.value)}
+                        placeholder="Thanh toán khi trả phòng..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenCheckoutPaymentDialog(false)}
+                  disabled={checkoutSubmitting}
+                >
+                  Hủy bỏ
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleCheckoutPaymentSubmit}
+                  disabled={checkoutSubmitting || checkoutPayAmount <= 0}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold"
+                >
+                  {checkoutSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  Thanh toán & Trả phòng
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog Hủy đặt phòng */}
+          <Dialog open={openCancelDialog} onOpenChange={open => {
+            if (!open) {
+              setOpenCancelDialog(false);
+              setSelectedCancelBooking(null);
+            }
+          }}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2 text-destructive">
+                  <XCircle className="size-5" /> Hủy đặt phòng
+                </DialogTitle>
+              </DialogHeader>
+
+              {selectedCancelBooking && (
+                <div className="space-y-4 py-4 text-sm">
+                  <div className="border rounded-xl p-4 bg-red-50/10 border-red-100/10 space-y-2.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Mã đặt phòng:</span>
+                      <span className="font-mono font-bold">BK-{1000 + Number(selectedCancelBooking.id)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Khách hàng:</span>
+                      <span className="font-semibold">{selectedCancelBooking.customerName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Số điện thoại:</span>
+                      <span>{selectedCancelBooking.customerPhone}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2">
+                      <span className="text-muted-foreground">Phòng đã chọn:</span>
+                      <span className="font-semibold text-foreground">
+                        Phòng {selectedCancelBooking.room?.roomNumber} ({selectedCancelBooking.room?.roomType?.name})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-left">
+                    <Label htmlFor="cancel-reason" className="text-xs font-semibold">
+                      Lý do hủy đặt phòng <span className="text-red-500">*</span>
+                    </Label>
+                    <Select value={cancelReason} onValueChange={(val) => setCancelReason(val)}>
+                      <SelectTrigger id="cancel-reason">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Khách hủy lịch">Khách hàng thay đổi kế hoạch / Hủy lịch</SelectItem>
+                        <SelectItem value="Đặt trùng phòng">Đặt trùng phòng / Nhầm lẫn thông tin</SelectItem>
+                        <SelectItem value="Lý do khác">Lý do đột xuất khác</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpenCancelDialog(false);
+                    setSelectedCancelBooking(null);
+                  }}
+                  disabled={cancelSubmitting}
+                >
+                  Bỏ qua
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleCancelSubmit}
+                  disabled={cancelSubmitting}
+                  variant="destructive"
+                  className="font-semibold"
+                >
+                  {cancelSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  Xác nhận hủy đặt
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog Nhận phòng */}
+          <Dialog open={openCheckInDialog} onOpenChange={open => {
+            if (!open) {
+              setOpenCheckInDialog(false);
+              setSelectedCheckInBooking(null);
+            }
+          }}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2 text-emerald-600">
+                  <LogIn className="size-5" /> Xác nhận nhận phòng
+                </DialogTitle>
+              </DialogHeader>
+
+              {selectedCheckInBooking && (
+                <div className="space-y-4 py-4 text-sm">
+                  <div className="border rounded-xl p-4 bg-emerald-50/10 border-emerald-100/10 space-y-2.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Mã đặt phòng:</span>
+                      <span className="font-mono font-bold">BK-{1000 + Number(selectedCheckInBooking.id)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Khách hàng:</span>
+                      <span className="font-semibold">{selectedCheckInBooking.customerName}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2">
+                      <span className="text-muted-foreground">Phòng:</span>
+                      <span className="font-semibold text-emerald-600">
+                        Phòng {selectedCheckInBooking.room?.roomNumber} ({selectedCheckInBooking.room?.roomType?.name})
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Thời gian:</span>
+                      <span>
+                        {formatDate(selectedCheckInBooking.checkInDate)} đến {formatDate(selectedCheckInBooking.checkOutDate)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số khách:</span>
+                      <span>{selectedCheckInBooking.guests || 1} khách</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-left">
+                    <Label htmlFor="checkin-note" className="text-xs font-semibold">
+                      Ghi chú nhận phòng
+                    </Label>
+                    <Input
+                      id="checkin-note"
+                      value={checkInNote}
+                      onChange={(e) => setCheckInNote(e.target.value)}
+                      placeholder="Ghi chú thêm khi nhận phòng..."
+                    />
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpenCheckInDialog(false);
+                    setSelectedCheckInBooking(null);
+                  }}
+                  disabled={checkInSubmitting}
+                >
+                  Bỏ qua
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleCheckInSubmit}
+                  disabled={checkInSubmitting}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                >
+                  {checkInSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  Xác nhận nhận phòng
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog Trả phòng (Đã thanh toán) */}
+          <Dialog open={openPaidCheckoutDialog} onOpenChange={open => {
+            if (!open) {
+              setOpenPaidCheckoutDialog(false);
+              setSelectedPaidCheckoutBooking(null);
+            }
+          }}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2 text-blue-600">
+                  <LogOut className="size-5" /> Xác nhận trả phòng
+                </DialogTitle>
+              </DialogHeader>
+
+              {selectedPaidCheckoutBooking && (
+                <div className="space-y-4 py-4 text-sm">
+                  <div className="border rounded-xl p-4 bg-blue-50/10 border-blue-100/10 space-y-2.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Mã đặt phòng:</span>
+                      <span className="font-mono font-bold">BK-{1000 + Number(selectedPaidCheckoutBooking.id)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Khách hàng:</span>
+                      <span className="font-semibold">{selectedPaidCheckoutBooking.customerName}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2">
+                      <span className="text-muted-foreground">Phòng trả:</span>
+                      <span className="font-semibold text-blue-600">
+                        Phòng {selectedPaidCheckoutBooking.room?.roomNumber} ({selectedPaidCheckoutBooking.room?.roomType?.name})
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Trạng thái thanh toán:</span>
+                      <span className="font-bold text-emerald-600 uppercase">ĐÃ THANH TOÁN ĐẦY ĐỦ</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 mt-2 font-semibold">
+                      <span className="text-muted-foreground">Tổng tiền hóa đơn:</span>
+                      <span>{formatCurrency(Number(selectedPaidCheckoutBooking.invoice?.totalAmount || selectedPaidCheckoutBooking.totalAmount))}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-left">
+                    <Label htmlFor="paid-checkout-note" className="text-xs font-semibold">
+                      Ghi chú trả phòng
+                    </Label>
+                    <Input
+                      id="paid-checkout-note"
+                      value={paidCheckoutNote}
+                      onChange={(e) => setPaidCheckoutNote(e.target.value)}
+                      placeholder="Ghi chú thêm khi trả phòng..."
+                    />
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setOpenPaidCheckoutDialog(false);
+                    setSelectedPaidCheckoutBooking(null);
+                  }}
+                  disabled={paidCheckoutSubmitting}
+                >
+                  Bỏ qua
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handlePaidCheckoutSubmit}
+                  disabled={paidCheckoutSubmitting}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                >
+                  {paidCheckoutSubmitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  Xác nhận trả phòng
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

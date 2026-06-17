@@ -1,5 +1,6 @@
 import prisma from "../config/prisma";
 import { Prisma } from "@prisma/client";
+import { PricingService } from "./pricing.service";
 
 // Helper function to serialize invoice data safe for JSON
 const serializeInvoice = (inv: any) => {
@@ -109,6 +110,33 @@ export const InvoiceService = {
     return serializeInvoice(invoice);
   },
 
+  // 2.5. Lấy hóa đơn theo bookingId
+  getInvoiceByBookingId: async (bookingId: string) => {
+    const invoice = await prisma.invoice.findUnique({
+      where: { bookingId: BigInt(bookingId) },
+      include: {
+        booking: {
+          include: {
+            room: {
+              include: {
+                roomType: true,
+              }
+            },
+            bookingServices: {
+              include: {
+                service: true
+              }
+            }
+          }
+        },
+        payments: true
+      }
+    });
+
+    if (!invoice) return null;
+    return serializeInvoice(invoice);
+  },
+
   // 3. Lấy đặt phòng chưa lập hóa đơn
   getBookingsWithoutInvoice: async () => {
     // Tìm các booking chưa có hóa đơn (booking.invoice là null) và không bị hủy (status khác CANCELLED)
@@ -136,21 +164,26 @@ export const InvoiceService = {
       }
     });
 
-    return bookings.map(b => {
-      // Tính toán trước chi phí
+    return Promise.all(bookings.map(async (b) => {
+      // Tính toán trước chi phí tự động qua PricingService
+      const pricing = await PricingService.calculateRoomCharge(
+        b.roomId,
+        b.bookingType,
+        b.checkInDate,
+        b.checkOutDate
+      );
+      const roomCharge = pricing.subTotal;
+
+      const servicesCharge = b.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
+      const subTotal = roomCharge + servicesCharge;
+      const taxAmount = 0; // Đã loại bỏ thuế theo yêu cầu
+      const totalAmount = subTotal;
+
       const checkIn = new Date(b.checkInDate);
       const checkOut = new Date(b.checkOutDate);
       const timeDiff = checkOut.getTime() - checkIn.getTime();
       let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
       if (nights <= 0) nights = 1;
-
-      const pricePerNight = b.room.pricePerNight !== null ? Number(b.room.pricePerNight) : Number(b.room.roomType.pricePerNight);
-      const roomCharge = pricePerNight * nights;
-
-      const servicesCharge = b.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
-      const subTotal = roomCharge + servicesCharge;
-      const taxAmount = subTotal * 0.1; // mặc định 10%
-      const totalAmount = subTotal + taxAmount;
 
       return {
         id: b.id.toString(),
@@ -172,7 +205,7 @@ export const InvoiceService = {
           roomType: {
             id: b.room.roomType.id.toString(),
             name: b.room.roomType.name,
-            pricePerNight
+            pricePerNight: Number(b.room.roomType.pricePerNight)
           }
         },
         bookingServices: b.bookingServices.map(bs => ({
@@ -184,7 +217,7 @@ export const InvoiceService = {
           unit: bs.service.unit
         }))
       };
-    });
+    }));
   },
 
   // 4. Tạo hóa đơn mới
@@ -208,23 +241,22 @@ export const InvoiceService = {
       throw new Error("Không tìm thấy thông tin đặt phòng");
     }
 
-    // 1. Tính tiền phòng
-    const checkIn = new Date(booking.checkInDate);
-    const checkOut = new Date(booking.checkOutDate);
-    const timeDiff = checkOut.getTime() - checkIn.getTime();
-    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-    if (nights <= 0) nights = 1;
-
-    const roomPrice = booking.room.pricePerNight !== null ? Number(booking.room.pricePerNight) : Number(booking.room.roomType.pricePerNight);
-    const roomCharge = roomPrice * nights;
+    // 1. Tính tiền phòng tự động qua PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      booking.roomId,
+      booking.bookingType,
+      booking.checkInDate,
+      booking.checkOutDate
+    );
+    const roomCharge = pricing.subTotal;
 
     // 2. Tính tiền dịch vụ
     const servicesCharge = booking.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
 
     // 3. Tính toán tổng hóa đơn
     const subTotal = roomCharge + servicesCharge;
-    const taxAmount = subTotal * 0.1; // Thuế 10%
-    const totalAmount = Math.max(0, subTotal + taxAmount - Number(discount));
+    const taxAmount = 0; // Đã loại bỏ thuế theo yêu cầu
+    const totalAmount = Math.max(0, subTotal - Number(discount));
 
     // 4. Sinh mã hóa đơn INV-YYYYMMDD-XXXX
     const today = new Date();
@@ -244,6 +276,7 @@ export const InvoiceService = {
         discount: new Prisma.Decimal(Number(discount)),
         totalAmount: new Prisma.Decimal(totalAmount),
         status: status || "UNPAID",
+        processedBy: data.processedBy || "Hệ thống",
       },
       include: {
         booking: {
@@ -356,7 +389,8 @@ export const InvoiceService = {
     const updatedInvoice = await prisma.invoice.update({
       where: { id: cleanId },
       data: {
-        status: newStatus
+        status: newStatus,
+        processedBy: data.processedBy || invoice.processedBy
       },
       include: {
         booking: {
@@ -402,24 +436,23 @@ export const InvoiceService = {
 
     if (!invoice) return null;
 
-    // 1. Tính toán tiền phòng
-    const checkIn = new Date(invoice.booking.checkInDate);
-    const checkOut = new Date(invoice.booking.checkOutDate);
-    const timeDiff = checkOut.getTime() - checkIn.getTime();
-    let nights = Math.ceil(timeDiff / (1000 * 3600 * 24));
-    if (nights <= 0) nights = 1;
-
-    const roomPrice = invoice.booking.room.pricePerNight !== null ? Number(invoice.booking.room.pricePerNight) : Number(invoice.booking.room.roomType.pricePerNight);
-    const roomCharge = roomPrice * nights;
+    // 1. Tính toán tiền phòng tự động qua PricingService
+    const pricing = await PricingService.calculateRoomCharge(
+      invoice.booking.roomId,
+      invoice.booking.bookingType,
+      invoice.booking.checkInDate,
+      invoice.booking.checkOutDate
+    );
+    const roomCharge = pricing.subTotal;
 
     // 2. Tính toán tiền dịch vụ mới
     const servicesCharge = invoice.booking.bookingServices.reduce((sum, bs) => sum + Number(bs.totalAmount), 0);
 
     // 3. Tính toán tổng tiền hóa đơn mới
     const subTotal = roomCharge + servicesCharge;
-    const taxAmount = subTotal * 0.1; // 10%
+    const taxAmount = 0; // Đã loại bỏ thuế theo yêu cầu
     const discount = Number(invoice.discount);
-    const totalAmount = Math.max(0, subTotal + taxAmount - discount);
+    const totalAmount = Math.max(0, subTotal - discount);
 
     // 4. Tính toán trạng thái hóa đơn mới dựa trên số tiền đã thanh toán trước đó
     const totalPaid = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);

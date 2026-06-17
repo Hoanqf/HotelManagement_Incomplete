@@ -30,6 +30,7 @@ import {
 // Helper Functions
 function roleLabel(role: string) {
   switch (role) {
+    case "SUPERADMIN": return "Super Admin";
     case "ADMIN": return "Quản trị viên";
     case "MANAGER": return "Quản lý";
     case "STAFF": return "Nhân viên";
@@ -59,6 +60,7 @@ function statusClass(status: string) {
 
 function roleClass(role: string) {
   switch (role) {
+    case "SUPERADMIN": return "bg-rose-100 text-rose-700 hover:bg-rose-100 dark:bg-rose-950 dark:text-rose-300";
     case "ADMIN": return "bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300";
     case "MANAGER": return "bg-indigo-100 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300";
     case "STAFF": return "bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300";
@@ -224,7 +226,7 @@ export default function UsersPage() {
                     <div>
                       <p className="text-sm text-muted-foreground">Ban Quản trị / Quản lý</p>
                       <h3 className="text-2xl font-bold">
-                        {users.filter((u) => u.role === "ADMIN" || u.role === "MANAGER").length}
+                        {users.filter((u) => u.role === "ADMIN" || u.role === "MANAGER" || u.role === "SUPERADMIN").length}
                       </h3>
                     </div>
                   </CardContent>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,8 @@ export function RoomsTab({
   formatCurrency, onRoomClick, onSaveRoom, onDeleteRoom,
   searchQuery, setSearchQuery
 }: RoomsTabProps) {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPERADMIN";
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<any | null>(null);
@@ -145,14 +148,41 @@ export function RoomsTab({
       {/* Bộ lọc */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
+          {/* Lọc trạng thái */}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Trạng thái" /></SelectTrigger>
             <SelectContent>
                 {filterOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
-                      {opt.value === "all" ? "Tất cả phòng" : opt.label}
+                      {opt.value === "all" ? "Tất cả trạng thái" : opt.label}
                     </SelectItem>
                 ))}
+            </SelectContent>
+          </Select>
+
+          {/* Lọc tầng */}
+          <Select value={floorFilter} onValueChange={setFloorFilter}>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Tất cả tầng" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả tầng</SelectItem>
+              {floors.map((fl) => (
+                <SelectItem key={fl} value={fl.toString()}>
+                  Tầng {fl}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Lọc loại phòng */}
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Tất cả loại phòng" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả loại phòng</SelectItem>
+              {roomTypes.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -167,9 +197,11 @@ export function RoomsTab({
             />
           </div>
           
-          <Button onClick={() => openForm()} className="bg-primary">
-            <Plus className="mr-2 h-4 w-4" /> Thêm phòng
-          </Button>
+          {isSuperAdmin && (
+            <Button onClick={() => openForm()} className="bg-primary">
+              <Plus className="mr-2 h-4 w-4" /> Thêm phòng
+            </Button>
+          )}
         </div>
 
         <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "grid" | "list")}>
@@ -180,17 +212,16 @@ export function RoomsTab({
         </Tabs>
       </div>
 
-      {/* Dialog Thêm/Sửa */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+          <DialogHeader className="p-6 pb-4 border-b shrink-0">
             <DialogTitle className="text-xl font-bold">
               {editingRoom ? `Chỉnh sửa phòng: ${editingRoom.roomNumber}` : "Thêm phòng mới"}
             </DialogTitle>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 pr-4">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-4">
+          <div className="flex-1 overflow-y-auto p-6 py-4 min-h-0">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-4">
               <div className="space-y-2 text-left">
                 <Label className="font-semibold">Mã phòng (Hệ thống tự tạo nếu bỏ trống)</Label>
                 <Input placeholder="Tự động" value={formData.roomCode} onChange={(e) => setFormData({...formData, roomCode: e.target.value})} disabled={!!editingRoom} />
@@ -270,11 +301,11 @@ export function RoomsTab({
                 />
               </div>
             </div>
-          </ScrollArea>
+          </div>
 
-          <DialogFooter className="pt-4 border-t">
+          <DialogFooter className="p-6 border-t bg-muted/10 shrink-0">
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Hủy</Button>
-            <Button onClick={handleSave} className="px-8">Lưu</Button>
+            <Button onClick={handleSave} className="px-8 bg-primary">Lưu</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -358,18 +389,32 @@ export function RoomsTab({
                           Đã dọn dẹp
                         </Button>
                       )}
-                      {room.status === "OCCUPIED" && (
+                      {room.status === "AVAILABLE" && !isReserved && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-green-600 border-green-200 hover:bg-green-50 h-8 text-xs font-semibold mr-2"
+                          onClick={() => onRoomClick(room)}
+                        >
+                          Đặt nhanh
+                        </Button>
+                      )}
+                      {(room.status === "OCCUPIED" || isReserved) && (
                         <Button
                           variant="outline"
                           size="sm"
                           className="text-blue-600 border-blue-200 hover:bg-blue-50 h-8 text-xs font-semibold mr-2"
                           onClick={() => onRoomClick(room)}
                         >
-                          Dịch vụ
+                          Thao tác
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => openForm(room)}><Edit className="size-4" /></Button>
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onDeleteRoom(room.id)}><Trash2 className="size-4" /></Button>
+                      {isSuperAdmin && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => openForm(room)}><Edit className="size-4" /></Button>
+                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onDeleteRoom(room.id)}><Trash2 className="size-4" /></Button>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -390,10 +435,13 @@ export function RoomsTab({
                 <CardContent className="p-4 flex flex-col flex-1 justify-between" onClick={() => onRoomClick(room)}>
                   <div>
                     <div className="flex justify-between items-start">
-                      <h3 className="font-bold text-lg text-left">Phòng {room.roomNumber}</h3>
+                      <h3 className="font-bold text-lg text-left">Phòng {room.roomNumber} - Tầng {room.floor}</h3>
                       <RoomStatusBadge status={displayStatus} />
                     </div>
-                    <p className="text-sm text-muted-foreground text-left">{room.roomType.name}</p>
+                    <div className="text-left mt-1">
+                      <p className="text-sm text-muted-foreground">{room.roomType.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Sức chứa: {room.capacity ?? room.roomType.capacity ?? 2} người</p>
+                    </div>
                     <div className="flex gap-2 my-3 h-5">
                       {amenities
                         .filter((a) => getRoomAmenities(room).some((dbName: string) => dbName.toLowerCase() === a.name.toLowerCase()))
@@ -447,11 +495,34 @@ export function RoomsTab({
                       Xác nhận đã dọn dẹp
                     </Button>
                   )}
-                  <div className="mt-4 flex justify-between items-center border-t pt-3">
-                    <span className="font-bold text-primary">{formatCurrency(room.pricePerNight ?? room.roomType.pricePerNight)}</span>
-                    <Button variant="secondary" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openForm(room); }}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
+
+                  {/* Giá chi tiết ngày, giờ, qua đêm */}
+                  <div className="mt-4 border-t pt-3 space-y-1 text-[11px] text-left">
+                    <div className="flex justify-between items-center font-bold text-primary">
+                      <span>Giá ngày:</span>
+                      <span>{formatCurrency(Number(room.pricePerNight ?? room.roomType.pricePerNight))}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-muted-foreground">
+                      <span>Giá giờ:</span>
+                      <span>{formatCurrency(Number(room.roomType.priceHourly || 0))}/h</span>
+                    </div>
+                    <div className="flex justify-between items-center text-muted-foreground">
+                      <span>Qua đêm:</span>
+                      <span>{formatCurrency(Number(room.roomType.priceOvernight || 0))}/đêm</span>
+                    </div>
+
+                    {isSuperAdmin && (
+                      <div className="flex justify-end pt-2">
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="h-7 px-2 text-[10px] flex gap-1 font-semibold" 
+                          onClick={(e) => { e.stopPropagation(); openForm(room); }}
+                        >
+                          <Edit className="h-3.5 w-3.5" /> Sửa phòng
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

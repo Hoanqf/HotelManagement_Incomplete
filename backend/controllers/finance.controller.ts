@@ -56,7 +56,7 @@ export const FinanceController = {
   delete: async (req: AuthRequest, res: Response) => {
     try {
       const authUser = req.user;
-      if (!authUser || authUser.role !== "ADMIN") {
+      if (!authUser || (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN")) {
         return res.status(403).json({ message: "Chỉ Quản trị viên mới được phép xóa giao dịch" });
       }
 

@@ -19,6 +19,18 @@ export const InvoiceAPI = {
     return res.json();
   },
 
+  // 2.5. Lấy hóa đơn theo bookingId
+  getInvoiceByBookingId: async (bookingId: string) => {
+    const res = await fetch(`${API_URL}/booking/${bookingId}`);
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error("Không thể tải hóa đơn của đặt phòng này");
+    }
+    return res.json();
+  },
+
   // 3. Lấy đặt phòng chưa lập hóa đơn
   getBookingsWithoutInvoice: async () => {
     const res = await fetch(`${API_URL}/no-invoice`);
