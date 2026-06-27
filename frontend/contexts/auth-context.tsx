@@ -4,6 +4,28 @@ import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { UserAPI } from "@/services/user.service";
 
+export function hasPermission(user: any, permissionKey: string): boolean {
+  if (!user) return false;
+  
+  // If user has custom permissions, use them
+  if (Array.isArray(user.permissions) && user.permissions.length > 0) {
+    return user.permissions.includes(permissionKey);
+  }
+
+  // Fallback to default role-based permissions
+  if (user.role === "SUPERADMIN") return true;
+  
+  if (user.role === "ADMIN" || user.role === "MANAGER") {
+    return permissionKey !== "USERS";
+  }
+
+  if (user.role === "STAFF") {
+    return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY"].includes(permissionKey);
+  }
+
+  return false;
+}
+
 const AuthContext = createContext<any>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -26,14 +48,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(parsedUser);
 
         // --- ROUTING GUARD ---
-        if (pathname.startsWith("/users") && parsedUser.role !== "ADMIN" && parsedUser.role !== "SUPERADMIN") {
-          toast.error("Bạn không có quyền truy cập trang quản lý tài khoản!");
-          router.replace("/dashboard");
-          return;
-        }
+        let pageKey = "";
+        if (pathname.startsWith("/users")) pageKey = "USERS";
+        else if (pathname.startsWith("/finance")) pageKey = "FINANCE";
+        else if (pathname.startsWith("/reports")) pageKey = "REPORTS";
+        else if (pathname.startsWith("/rooms")) pageKey = "ROOMS";
+        else if (pathname.startsWith("/bookings")) pageKey = "BOOKINGS";
+        else if (pathname.startsWith("/services")) pageKey = "SERVICES";
+        else if (pathname.startsWith("/invoices")) pageKey = "INVOICES";
+        else if (pathname.startsWith("/inventory")) pageKey = "INVENTORY";
 
-        if ((pathname.startsWith("/finance") || pathname.startsWith("/reports")) && parsedUser.role === "STAFF") {
-          toast.error("Bạn không có quyền truy cập trang tài chính và thống kê!");
+        if (pageKey && !hasPermission(parsedUser, pageKey)) {
+          toast.error("Bạn không có quyền truy cập chức năng này!");
           router.replace("/dashboard");
           return;
         }

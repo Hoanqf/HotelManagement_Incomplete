@@ -26,6 +26,7 @@ model User {
   avatarUrl   String?   @map("avatar_url") @db.VarChar(255)
   role        String    @db.VarChar(20)
   status      String    @db.VarChar(20)
+  permissions String[]  @default([])
   
   // Quan hệ với Position
   positionId  Int?      @map("position_id")
@@ -224,3 +225,43 @@ model Holiday {
 
   @@map("holidays")
 }
+
+model InventoryItem {
+  id           BigInt   @id @default(autoincrement())
+  name         String   @db.VarChar(255)
+  sku          String?  @unique @db.VarChar(50)
+  category     String   @db.VarChar(100)
+  unit         String   @db.VarChar(50)
+  quantity     Int      @default(0)
+  minQuantity  Int      @default(0) @map("min_quantity")
+  costPrice    Decimal  @default(0) @db.Decimal(12, 2) @map("cost_price")
+  sellingPrice Decimal? @db.Decimal(12, 2) @map("selling_price")
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  transactions InventoryTransaction[]
+
+  @@map("inventory_items")
+}
+
+model InventoryTransaction {
+  id          BigInt   @id @default(autoincrement())
+  type        String   @db.VarChar(20) // "IMPORT" or "EXPORT"
+  itemId      BigInt   @map("item_id")
+  quantity    Int
+  price       Decimal  @db.Decimal(12, 2)
+  totalAmount Decimal  @map("total_amount") @db.Decimal(12, 2)
+  reason      String?  @db.VarChar(255)
+  referenceId String?  @map("reference_id") @db.VarChar(100)
+  date        DateTime @default(now())
+  createdById BigInt?  @map("created_by_id")
+
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("inventory_transactions")
+}
+

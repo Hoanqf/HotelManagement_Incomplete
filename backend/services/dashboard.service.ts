@@ -115,15 +115,64 @@ export const DashboardService = {
       where: { status: "CHECKED_IN" }
     });
 
-    // 2. Doanh thu & Chi phí 6 tháng gần nhất
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-    sixMonthsAgo.setDate(1);
-    sixMonthsAgo.setHours(0, 0, 0, 0);
+    // 2. Doanh thu & Chi phí theo Ngày (30 ngày gần nhất)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-    const transactions = await prisma.financeTransaction.findMany({
+    const transactionsDaily = await prisma.financeTransaction.findMany({
       where: {
-        date: { gte: sixMonthsAgo }
+        date: { gte: thirtyDaysAgo }
+      },
+      select: {
+        type: true,
+        amount: true,
+        date: true
+      }
+    });
+
+    const last30DaysData: any[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+      const dayKey = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      last30DaysData.push({
+        label: dateStr,
+        key: dayKey,
+        revenue: 0,
+        expense: 0,
+        profit: 0
+      });
+    }
+
+    transactionsDaily.forEach(tx => {
+      const txDate = new Date(tx.date);
+      const dayKey = `${txDate.getFullYear()}-${(txDate.getMonth() + 1).toString().padStart(2, '0')}-${txDate.getDate().toString().padStart(2, '0')}`;
+      const bucket = last30DaysData.find(item => item.key === dayKey);
+      if (bucket) {
+        const amount = Number(tx.amount);
+        if (tx.type === "INCOME") {
+          bucket.revenue += amount;
+        } else if (tx.type === "EXPENSE") {
+          bucket.expense += amount;
+        }
+      }
+    });
+
+    last30DaysData.forEach(item => {
+      item.profit = item.revenue - item.expense;
+    });
+
+    // 3. Doanh thu & Chi phí theo Tháng (12 tháng gần nhất)
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
+    twelveMonthsAgo.setDate(1);
+    twelveMonthsAgo.setHours(0, 0, 0, 0);
+
+    const transactionsMonthly = await prisma.financeTransaction.findMany({
+      where: {
+        date: { gte: twelveMonthsAgo }
       },
       select: {
         type: true,
@@ -133,14 +182,14 @@ export const DashboardService = {
     });
 
     const monthNames = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
-    const last6MonthsData: any[] = [];
-    for (let i = 5; i >= 0; i--) {
+    const last12MonthsData: any[] = [];
+    for (let i = 11; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
       const monthIndex = d.getMonth();
       const year = d.getFullYear();
-      last6MonthsData.push({
-        month: monthNames[monthIndex],
+      last12MonthsData.push({
+        label: `${monthNames[monthIndex]}/${year.toString().slice(-2)}`,
         monthNum: monthIndex,
         year: year,
         revenue: 0,
@@ -149,27 +198,30 @@ export const DashboardService = {
       });
     }
 
-    transactions.forEach(tx => {
+    transactionsMonthly.forEach(tx => {
       const txDate = new Date(tx.date);
       const txMonth = txDate.getMonth();
       const txYear = txDate.getFullYear();
       
-      const monthBucket = last6MonthsData.find(item => item.monthNum === txMonth && item.year === txYear);
-      if (monthBucket) {
+      const bucket = last12MonthsData.find(item => item.monthNum === txMonth && item.year === txYear);
+      if (bucket) {
         const amount = Number(tx.amount);
         if (tx.type === "INCOME") {
-          monthBucket.revenue += amount;
+          bucket.revenue += amount;
         } else if (tx.type === "EXPENSE") {
-          monthBucket.expense += amount;
+          bucket.expense += amount;
         }
       }
     });
 
-    last6MonthsData.forEach(item => {
+    last12MonthsData.forEach(item => {
       item.profit = item.revenue - item.expense;
     });
 
-    // 3. Phân tích nguồn đặt phòng
+    // Giữ nguyên 6 tháng gần nhất làm mặc định tương thích ngược
+    const last6MonthsData = last12MonthsData.slice(-6);
+
+    // 4. Phân tích nguồn đặt phòng
     const bookingsBySource = await prisma.booking.groupBy({
       by: ["bookingSource"],
       _count: { id: true }
@@ -198,7 +250,7 @@ export const DashboardService = {
     // Sắp xếp theo tỷ lệ giảm dần
     bookingSourcesData.sort((a, b) => b.value - a.value);
 
-    // 4. Báo cáo giao dịch tài chính gần đây
+    // 5. Báo cáo giao dịch tài chính gần đây
     const recentTx = await prisma.financeTransaction.findMany({
       take: 6,
       orderBy: { date: "desc" }
@@ -240,7 +292,19 @@ export const DashboardService = {
         }
       ],
       revenueData: last6MonthsData.map(item => ({
-        month: item.month,
+        month: item.label,
+        revenue: item.revenue,
+        expense: item.expense,
+        profit: item.profit
+      })),
+      revenueMonthly: last12MonthsData.map(item => ({
+        label: item.label,
+        revenue: item.revenue,
+        expense: item.expense,
+        profit: item.profit
+      })),
+      revenueDaily: last30DaysData.map(item => ({
+        label: item.label,
         revenue: item.revenue,
         expense: item.expense,
         profit: item.profit

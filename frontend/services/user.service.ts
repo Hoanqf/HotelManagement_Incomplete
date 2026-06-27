@@ -60,6 +60,20 @@ export const UserAPI = {
     return res.json();
   },
 
+  // 4.5. Upload ảnh đại diện lên server local
+  uploadAvatar: async (base64Image: string) => {
+    const res = await fetch(`${API_URL}/upload-avatar`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ image: base64Image })
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.message || "Không thể upload ảnh đại diện");
+    }
+    return result;
+  },
+
   // 5. Lấy thông tin người dùng theo ID
   getUserById: async (id: string) => {
     const res = await fetch(`${API_URL}/${id}`, {

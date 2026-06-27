@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth, hasPermission } from "@/contexts/auth-context";
 import {
   LayoutDashboard,
   BedDouble,
@@ -14,6 +14,7 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,10 @@ const navigation = [
   { name: "Đặt phòng", href: "/bookings", icon: CalendarDays },
   { name: "Dịch vụ", href: "/services", icon: Utensils },
   { name: "Hóa đơn", href: "/invoices", icon: Receipt },
+  { name: "Quản lý kho", href: "/inventory", icon: Warehouse },
   { name: "Tài khoản và phân quyền", href: "/users", icon: Users },
   { name: "Thu chi", href: "/finance", icon: Wallet },
   { name: "Thống kê", href: "/reports", icon: BarChart3 },
-
 ];
 
 const bottomNavigation = [
@@ -50,13 +51,23 @@ export function AppSidebar() {
 
   const filteredNavigation = navigation.filter((item) => {
     if (!user) return false;
-    if (user.role === "STAFF") {
-      return ["Tổng quan", "Quản lý phòng", "Đặt phòng", "Dịch vụ", "Hóa đơn"].includes(item.name);
+    
+    // Map item name to permission key
+    let key = "";
+    switch (item.name) {
+      case "Tổng quan": key = "DASHBOARD"; break;
+      case "Quản lý phòng": key = "ROOMS"; break;
+      case "Đặt phòng": key = "BOOKINGS"; break;
+      case "Dịch vụ": key = "SERVICES"; break;
+      case "Hóa đơn": key = "INVOICES"; break;
+      case "Quản lý kho": key = "INVENTORY"; break;
+      case "Thu chi": key = "FINANCE"; break;
+      case "Thống kê": key = "REPORTS"; break;
+      case "Tài khoản và phân quyền": key = "USERS"; break;
+      default: return true;
     }
-    if (user.role === "MANAGER") {
-      return item.name !== "Tài khoản và phân quyền";
-    }
-    return true; // ADMIN sees everything
+    
+    return hasPermission(user, key);
   });
 
   return (

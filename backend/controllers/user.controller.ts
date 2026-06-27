@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
 import jwt from "jsonwebtoken";
+import fs from "fs";
+import path from "path";
 
 export const UserController = {
   // 1. Lấy danh sách users
@@ -64,14 +66,14 @@ export const UserController = {
         return res.status(401).json({ message: "Yêu cầu đăng nhập trước" });
       }
 
-      // Nếu không phải ADMIN/SUPERADMIN và cố cập nhật tài khoản người khác -> Chặn
-      if (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN" && authUser.id !== targetId) {
+      // Nếu không phải SUPERADMIN và cố cập nhật tài khoản người khác -> Chặn
+      if (authUser.role !== "SUPERADMIN" && authUser.id !== targetId) {
         return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa tài khoản của người khác" });
       }
 
-      // Nếu không phải ADMIN/SUPERADMIN tự cập nhật chính mình -> Lọc bỏ role và status để tránh leo thang đặc quyền
+      // Nếu không phải SUPERADMIN tự cập nhật chính mình -> Lọc bỏ role và status để tránh leo thang đặc quyền
       const updateData = { ...req.body };
-      if (authUser.role !== "ADMIN" && authUser.role !== "SUPERADMIN") {
+      if (authUser.role !== "SUPERADMIN") {
         delete updateData.role;
         delete updateData.status;
       }
@@ -129,6 +131,56 @@ delete: async (req: Request, res: Response) => {
     res.json({ message: "Xóa tài khoản thành công" });
   } catch (error: any) {
     res.status(400).json({ message: error.message });
+  }
+},
+
+uploadAvatar: async (req: Request, res: Response) => {
+  try {
+    const { image } = req.body;
+    if (!image) {
+      return res.status(400).json({ message: "Không tìm thấy dữ liệu hình ảnh" });
+    }
+
+    // Kiểm tra định dạng base64
+    const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ message: "Định dạng ảnh không hợp lệ" });
+    }
+
+    const imageType = matches[1]; // ví dụ: image/png
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, "base64");
+
+    // Xác định đuôi file
+    let extension = "png";
+    if (imageType.includes("jpeg") || imageType.includes("jpg")) {
+      extension = "jpg";
+    } else if (imageType.includes("gif")) {
+      extension = "gif";
+    } else if (imageType.includes("webp")) {
+      extension = "webp";
+    }
+
+    // Đường dẫn thư mục lưu ảnh: backend/public/avatars
+    const uploadDir = path.join(process.cwd(), "public", "avatars");
+    
+    // Tạo thư mục nếu chưa tồn tại
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    // Tạo tên file độc nhất
+    const filename = `avatar-${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`;
+    const filePath = path.join(uploadDir, filename);
+
+    // Ghi file ra ổ đĩa
+    fs.writeFileSync(filePath, buffer);
+
+    // Trả về đường dẫn tĩnh
+    const fileUrl = `http://localhost:5000/public/avatars/${filename}`;
+    res.json({ url: fileUrl });
+  } catch (error: any) {
+    res.status(500).json({ message: "Lỗi server khi upload ảnh đại diện: " + error.message });
   }
 }
 

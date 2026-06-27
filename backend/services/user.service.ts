@@ -21,6 +21,7 @@ export const UserService = {
         phoneNumber: true,
         role: true,
         status: true,
+        permissions: true,
         positionId: true,
         createdAt: true,
         position: {

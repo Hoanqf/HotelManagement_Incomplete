@@ -37,6 +37,32 @@ import {
   Plus,
 } from "lucide-react";
 
+const AVAILABLE_PERMISSIONS = [
+  { key: "DASHBOARD", name: "Tổng quan (Dashboard)", desc: "Xem biểu đồ doanh thu, số liệu tổng hợp hệ thống" },
+  { key: "ROOMS", name: "Quản lý phòng (Rooms)", desc: "Xem trạng thái, sơ đồ phòng, dọn dẹp" },
+  { key: "BOOKINGS", name: "Đặt phòng (Bookings)", desc: "Đặt phòng mới, nhận/trả phòng (Check-in/Check-out)" },
+  { key: "SERVICES", name: "Dịch vụ phòng (Services)", desc: "Gọi món, dịch vụ giặt là, spa cho khách hàng" },
+  { key: "INVOICES", name: "Hóa đơn & In ấn (Invoices)", desc: "Xuất hóa đơn, thanh toán, in hóa đơn thanh toán" },
+  { key: "INVENTORY", name: "Quản lý kho (Inventory)", desc: "Nhập xuất hàng hóa tiêu dùng, đồ uống, trang thiết bị" },
+  { key: "FINANCE", name: "Thu chi (Finance)", desc: "Ghi chép giao dịch, quỹ tiền mặt và dòng tiền thu chi" },
+  { key: "REPORTS", name: "Thống kê (Reports)", desc: "Xem báo cáo biểu đồ doanh thu theo ngày, tháng, năm" },
+  { key: "USERS", name: "Tài khoản & Phân quyền (Users)", desc: "Quản lý danh sách nhân viên, gán vai trò và cấu hình quyền" },
+];
+
+const getDefaultPermissions = (role: string): string[] => {
+  switch (role) {
+    case "SUPERADMIN":
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS", "USERS"];
+    case "ADMIN":
+    case "MANAGER":
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS"];
+    case "STAFF":
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY"];
+    default:
+      return [];
+  }
+};
+
 export default function AddUserPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +84,7 @@ export default function AddUserPage() {
     role: "STAFF",
     status: "ACTIVE",
     positionId: "",
+    permissions: getDefaultPermissions("STAFF") as string[],
   });
 
   // 2. Lấy danh sách chức vụ (Positions)
@@ -87,62 +114,59 @@ export default function AddUserPage() {
       const selectedPos = positions.find(p => p.id.toString() === formData.positionId);
       if (selectedPos) {
         const name = selectedPos.position_name.toUpperCase();
+        let newRole = "STAFF";
         if (name === "ADMIN") {
-          setFormData(prev => ({ ...prev, role: "ADMIN" }));
+          newRole = "ADMIN";
         } else if (name.includes("QUẢN LÝ") || name.includes("MANAGER") || name.includes("TRƯỞNG BỘ PHẬN")) {
-          setFormData(prev => ({ ...prev, role: "MANAGER" }));
+          newRole = "MANAGER";
         } else {
-          setFormData(prev => ({ ...prev, role: "STAFF" }));
+          newRole = "STAFF";
         }
+        setFormData(prev => ({ 
+          ...prev, 
+          role: newRole,
+          permissions: getDefaultPermissions(newRole)
+        }));
       }
     }
   }, [formData.positionId, positions]);
 
-  // 3. Hàm Upload ảnh lên Cloudinary
+  // 3. Hàm Upload ảnh đại diện bằng FileReader (Chuyển sang Base64 rồi upload lên server local)
   const handleUploadImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  setUploading(true);
-  
-  try {
-    // 1. Lấy cấu hình từ Backend .env thông qua API
-    const config = await UserAPI.getCloudinaryConfig();
-    
-    if (!config.cloudName || !config.uploadPreset) {
-      toast.error("Chưa cấu hình Cloudinary ở Backend");
+    // Giới hạn dung lượng file tải lên (ví dụ: < 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Ảnh đại diện phải nhỏ hơn 5MB");
       return;
     }
 
-    // 2. Chuẩn bị dữ liệu gửi lên Cloudinary
-    const data = new FormData();
-    data.append("file", file);
-    data.append("upload_preset", config.uploadPreset);
-
-    // 3. Thực hiện Upload
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${config.cloudName}/image/upload`, 
-      {
-        method: "POST",
-        body: data,
-      }
-    );
-    
-    const fileData = await res.json();
-    
-    if (fileData.secure_url) {
-      setFormData({ ...formData, avatarUrl: fileData.secure_url });
-      toast.success("Tải ảnh lên thành công!");
-    } else {
-      throw new Error("Upload failed");
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+        const base64Data = reader.result as string;
+        try {
+          const res = await UserAPI.uploadAvatar(base64Data);
+          if (res.url) {
+            setFormData(prev => ({ ...prev, avatarUrl: res.url }));
+            toast.success("Tải ảnh đại diện thành công!");
+          } else {
+            toast.error("Không nhận được URL ảnh đại diện");
+          }
+        } catch (uploadError: any) {
+          toast.error("Lỗi khi tải ảnh lên server: " + uploadError.message);
+        } finally {
+          setUploading(false);
+        }
+      };
+    } catch (error: any) {
+      toast.error("Không thể xử lý ảnh tải lên: " + error.message);
+      setUploading(false);
     }
-  } catch (error) {
-    console.error("Lỗi upload:", error);
-    toast.error("Không thể tải ảnh lên. Kiểm tra lại cấu hình Cloudinary.");
-  } finally {
-    setUploading(false);
-  }
-};
+  };
 
   // 4. Xử lý lưu User
   const handleSubmit = async (e: React.FormEvent) => {
@@ -348,13 +372,20 @@ export default function AddUserPage() {
                 <div className="grid gap-2">
                   <div className="flex items-center gap-1.5">
                     <Label>Vai trò hệ thống</Label>
-                    <span className="text-[10px] text-muted-foreground italic font-normal">(Tự động theo Chức vụ)</span>
                   </div>
-                  <Select value={formData.role} disabled>
-                    <SelectTrigger className="bg-muted opacity-80 cursor-not-allowed">
+                  <Select 
+                    value={formData.role} 
+                    onValueChange={(val) => setFormData({
+                      ...formData, 
+                      role: val,
+                      permissions: getDefaultPermissions(val)
+                    })}
+                  >
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="SUPERADMIN">SUPERADMIN - Hệ thống Super Admin</SelectItem>
                       <SelectItem value="ADMIN">ADMIN - Quản trị viên</SelectItem>
                       <SelectItem value="MANAGER">MANAGER - Quản lý bộ phận</SelectItem>
                       <SelectItem value="STAFF">STAFF - Nhân viên nghiệp vụ</SelectItem>
@@ -394,6 +425,54 @@ export default function AddUserPage() {
                   </div>
                 </div>
               </div>
+
+                <hr className="border-dashed my-6" />
+
+                {/* PHẦN 4: QUYỀN TRUY CẬP CHỨC NĂNG */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="font-semibold text-sm text-primary flex items-center gap-2">
+                      <ShieldCheck className="size-5 text-blue-600" />
+                      Quyền truy cập chức năng
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Chọn các phân hệ chức năng cho phép tài khoản này truy cập (Mặc định tự động điền theo Vai trò hệ thống)
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {AVAILABLE_PERMISSIONS.map((perm) => {
+                      const isChecked = formData.permissions.includes(perm.key);
+                      return (
+                        <label 
+                          key={perm.key} 
+                          className={`flex items-start p-3 border rounded-xl cursor-pointer hover:bg-muted/50 transition-all ${
+                            isChecked ? "border-blue-200 bg-blue-50/20 shadow-sm" : "border-muted"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 mr-3 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setFormData(prev => {
+                                const newPerms = checked 
+                                  ? [...prev.permissions, perm.key]
+                                  : prev.permissions.filter(k => k !== perm.key);
+                                return { ...prev, permissions: newPerms };
+                              });
+                            }}
+                          />
+                          <div className="space-y-0.5">
+                            <span className="font-semibold text-xs text-foreground block">{perm.name}</span>
+                            <span className="text-[10px] text-muted-foreground block leading-relaxed">{perm.desc}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </CardContent>
 
               <CardFooter className="flex justify-between border-t bg-muted/10 p-6">
