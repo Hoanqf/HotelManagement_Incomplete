@@ -19,7 +19,7 @@ router.put("/:id", UserController.update);
 router.post("/positions", requireRole(["ADMIN", "MANAGER", "SUPERADMIN"]), UserController.createPosition);
 
 // Các route chỉ dành riêng cho SUPERADMIN
-router.get("/", requireRole(["SUPERADMIN"]), UserController.getUsers);
+router.get("/", UserController.getUsers);
 router.post("/", requireRole(["SUPERADMIN"]), UserController.create);
 router.delete("/:id", requireRole(["SUPERADMIN"]), UserController.delete);
 

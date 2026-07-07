@@ -20,7 +20,7 @@ export function hasPermission(user: any, permissionKey: string): boolean {
   }
 
   if (user.role === "STAFF") {
-    return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY"].includes(permissionKey);
+    return ["DASHBOARD", "ROOMS", "BOOKINGS", "CUSTOMERS", "SERVICES", "INVOICES", "INVENTORY"].includes(permissionKey);
   }
 
   return false;
@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // --- ROUTING GUARD ---
         let pageKey = "";
         if (pathname.startsWith("/users")) pageKey = "USERS";
+        else if (pathname.startsWith("/customers")) pageKey = "CUSTOMERS";
         else if (pathname.startsWith("/finance")) pageKey = "FINANCE";
         else if (pathname.startsWith("/reports")) pageKey = "REPORTS";
         else if (pathname.startsWith("/rooms")) pageKey = "ROOMS";

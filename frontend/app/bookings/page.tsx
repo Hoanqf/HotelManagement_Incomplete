@@ -109,6 +109,7 @@ export default function BookingsPage() {
     customerName: "",
     customerPhone: "",
     customerEmail: "",
+    nationality: "Việt Nam",
     checkInDate: "",
     checkOutDate: "",
     guests: 1,
@@ -117,6 +118,35 @@ export default function BookingsPage() {
     bookingType: "DAILY",
     note: "",
   });
+
+  const [phoneSuggestions, setPhoneSuggestions] = useState<any[]>([]);
+
+  useEffect(() => {
+    const delayDebounce = setTimeout(async () => {
+      const phone = formData.customerPhone;
+      if (phone && phone.length >= 3) {
+        try {
+          const res = await fetch(`http://localhost:5000/api/customers/search?phone=${encodeURIComponent(phone)}`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data) {
+              setPhoneSuggestions([data]);
+            } else {
+              setPhoneSuggestions([]);
+            }
+          }
+        } catch (err) {
+          console.error("Lỗi gợi ý SĐT:", err);
+        }
+      } else {
+        setPhoneSuggestions([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [formData.customerPhone]);
 
   const loadData = async () => {
     setLoading(true);
@@ -183,6 +213,7 @@ export default function BookingsPage() {
         customerName: "",
         customerPhone: "",
         customerEmail: "",
+        nationality: "Việt Nam",
         checkInDate: "",
         checkOutDate: "",
         guests: 1,
@@ -215,11 +246,13 @@ export default function BookingsPage() {
         customerName: "",
         customerPhone: "",
         customerEmail: "",
+        nationality: "Việt Nam",
         checkInDate: "",
         checkOutDate: "",
         guests: 1,
         roomId: "",
         bookingSource: "WALK_IN",
+        bookingType: "DAILY",
         note: "",
       });
       loadData();
@@ -710,7 +743,7 @@ export default function BookingsPage() {
                     />
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <Label htmlFor="customerPhone">Số điện thoại <span className="text-red-500">*</span></Label>
                     <Input
                       id="customerPhone"
@@ -718,19 +751,59 @@ export default function BookingsPage() {
                       value={formData.customerPhone}
                       onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
                       required
+                      autoComplete="off"
                     />
+                    {phoneSuggestions.length > 0 && (
+                      <div className="absolute z-[100] left-0 right-0 top-[66px] bg-popover border rounded-md shadow-lg overflow-hidden border-border">
+                        {phoneSuggestions.map((cust) => (
+                          <div 
+                            key={cust.id} 
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                customerPhone: cust.phoneNumber,
+                                customerName: cust.fullName,
+                                customerEmail: cust.email || "",
+                                nationality: cust.nationality || "Việt Nam"
+                              }));
+                              setPhoneSuggestions([]);
+                            }}
+                            className="p-2 text-xs hover:bg-accent hover:text-accent-foreground cursor-pointer flex flex-col gap-0.5 border-b last:border-b-0"
+                          >
+                            <span className="font-bold text-foreground">{cust.fullName}</span>
+                            <span className="text-[10px] text-muted-foreground">SĐT: {cust.phoneNumber} | Quốc tịch: {cust.nationality}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="customerEmail">Email</Label>
-                  <Input
-                    id="customerEmail"
-                    type="email"
-                    placeholder="example@gmail.com"
-                    value={formData.customerEmail}
-                    onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="customerEmail">Email</Label>
+                    <Input
+                      id="customerEmail"
+                      type="email"
+                      placeholder="example@gmail.com"
+                      value={formData.customerEmail}
+                      onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="customerNation">Quốc tịch</Label>
+                    <select
+                      id="customerNation"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={formData.nationality}
+                      onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
+                    >
+                      {["Việt Nam", "Mỹ", "Anh", "Ireland", "Hàn Quốc", "Nhật Bản", "Trung Quốc", "Pháp", "Đức", "Úc", "Singapore"].map(n => <option key={n} value={n}>{n}</option>)}
+                      {!["Việt Nam", "Mỹ", "Anh", "Ireland", "Hàn Quốc", "Nhật Bản", "Trung Quốc", "Pháp", "Đức", "Úc", "Singapore"].includes(formData.nationality) && (
+                        <option value={formData.nationality}>{formData.nationality}</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

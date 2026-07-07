@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Warehouse,
+  Contact,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const navigation = [
   { name: "Tổng quan", href: "/", icon: LayoutDashboard },
   { name: "Quản lý phòng", href: "/rooms", icon: BedDouble },
   { name: "Đặt phòng", href: "/bookings", icon: CalendarDays },
+  { name: "Khách hàng", href: "/customers", icon: Contact },
   { name: "Dịch vụ", href: "/services", icon: Utensils },
   { name: "Hóa đơn", href: "/invoices", icon: Receipt },
   { name: "Quản lý kho", href: "/inventory", icon: Warehouse },
@@ -58,6 +60,7 @@ export function AppSidebar() {
       case "Tổng quan": key = "DASHBOARD"; break;
       case "Quản lý phòng": key = "ROOMS"; break;
       case "Đặt phòng": key = "BOOKINGS"; break;
+      case "Khách hàng": key = "CUSTOMERS"; break;
       case "Dịch vụ": key = "SERVICES"; break;
       case "Hóa đơn": key = "INVOICES"; break;
       case "Quản lý kho": key = "INVENTORY"; break;

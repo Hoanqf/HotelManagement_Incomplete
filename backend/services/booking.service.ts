@@ -27,6 +27,7 @@ export const BookingService = {
       id: b.id.toString(),
       roomId: b.roomId.toString(),
       userId: b.userId ? b.userId.toString() : null,
+      customerId: b.customerId ? b.customerId.toString() : null,
       room: {
         ...b.room,
         id: b.room.id.toString(),
@@ -112,6 +113,40 @@ export const BookingService = {
     );
     const totalAmount = new Prisma.Decimal(pricing.subTotal);
 
+    // Tìm hoặc tự động tạo khách hàng dựa trên Số điện thoại
+    let customer = await prisma.customer.findUnique({
+      where: { phoneNumber: customerPhone }
+    });
+
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: {
+          fullName: customerName,
+          phoneNumber: customerPhone,
+          email: customerEmail || null,
+          nationality: data.nationality || "Việt Nam",
+        }
+      });
+    } else {
+      // Cập nhật lại thông tin nếu có thay đổi và trước đó chưa có email / nationality
+      const updateData: any = {};
+      if (customerName && customer.fullName !== customerName) {
+        updateData.fullName = customerName;
+      }
+      if (customerEmail && !customer.email) {
+        updateData.email = customerEmail;
+      }
+      if (data.nationality && customer.nationality !== data.nationality) {
+        updateData.nationality = data.nationality;
+      }
+      if (Object.keys(updateData).length > 0) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: updateData
+        });
+      }
+    }
+
     // Tạo booking code ngẫu nhiên (Ví dụ: BK-XXXX)
     const randomCode = "BK-" + Math.floor(1000 + Math.random() * 9000);
 
@@ -119,9 +154,11 @@ export const BookingService = {
     const newBooking = await prisma.booking.create({
       data: {
         roomId: BigInt(roomId),
+        customerId: customer.id,
         customerName,
         customerPhone,
         customerEmail: customerEmail || "",
+        nationality: data.nationality || customer.nationality || "Việt Nam",
         checkInDate: checkIn,
         checkOutDate: checkOut,
         totalAmount,
@@ -144,6 +181,7 @@ export const BookingService = {
       id: newBooking.id.toString(),
       roomId: newBooking.roomId.toString(),
       userId: newBooking.userId ? newBooking.userId.toString() : null,
+      customerId: newBooking.customerId ? newBooking.customerId.toString() : null,
       room: {
         ...newBooking.room,
         id: newBooking.room.id.toString(),
@@ -192,17 +230,33 @@ export const BookingService = {
       roomStatus = "AVAILABLE"; // hoặc tùy chỉnh theo mong muốn
     }
 
-    // Cập nhật trạng thái phòng thực tế trong DB
-    await prisma.room.update({
-      where: { id: booking.roomId },
-      data: { status: roomStatus }
+    // Cập nhật trạng thái phòng thực tế trong DB (nếu không đang có bảo trì đang hoạt động)
+    const activeMaintenance = await prisma.maintenanceRecord.findFirst({
+      where: {
+        roomId: booking.roomId,
+        status: { in: ["PENDING", "IN_PROGRESS", "WAITING_PARTS"] }
+      }
     });
+
+    if (!activeMaintenance) {
+      await prisma.room.update({
+        where: { id: booking.roomId },
+        data: { status: roomStatus }
+      });
+    } else {
+      // Nếu đang bảo trì, đảm bảo phòng vẫn được giữ ở trạng thái MAINTENANCE trong DB
+      await prisma.room.update({
+        where: { id: booking.roomId },
+        data: { status: "MAINTENANCE" }
+      });
+    }
 
     return {
       ...updatedBooking,
       id: updatedBooking.id.toString(),
       roomId: updatedBooking.roomId.toString(),
       userId: updatedBooking.userId ? updatedBooking.userId.toString() : null,
+      customerId: updatedBooking.customerId ? updatedBooking.customerId.toString() : null,
       room: {
         ...updatedBooking.room,
         id: updatedBooking.room.id.toString(),
@@ -425,6 +479,7 @@ export const BookingService = {
       id: updated.id.toString(),
       roomId: updated.roomId.toString(),
       userId: updated.userId ? updated.userId.toString() : null,
+      customerId: updated.customerId ? updated.customerId.toString() : null,
       room: {
         ...updated.room,
         id: updated.room.id.toString(),
@@ -514,10 +569,18 @@ export const BookingService = {
                                  ((booking.status === "PENDING" || booking.status === "CONFIRMED") && now >= checkIn);
 
     if (oldRoomNeedsCleaning) {
-      await prisma.room.update({
-        where: { id: booking.roomId },
-        data: { status: "DIRTY" }
+      const oldRoomActiveMaint = await prisma.maintenanceRecord.findFirst({
+        where: {
+          roomId: booking.roomId,
+          status: { in: ["PENDING", "IN_PROGRESS", "WAITING_PARTS"] }
+        }
       });
+      if (!oldRoomActiveMaint) {
+        await prisma.room.update({
+          where: { id: booking.roomId },
+          data: { status: "DIRTY" }
+        });
+      }
     }
 
     // Cập nhật trạng thái phòng mới sang OCCUPIED chỉ khi booking đã CHECKED_IN
@@ -536,6 +599,7 @@ export const BookingService = {
       id: updated.id.toString(),
       roomId: updated.roomId.toString(),
       userId: updated.userId ? updated.userId.toString() : null,
+      customerId: updated.customerId ? updated.customerId.toString() : null,
       room: {
         ...updated.room,
         id: updated.room.id.toString(),

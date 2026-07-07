@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { getMaintenanceStaff } from "@/lib/mock-data";
+import { UserAPI } from "@/services/user.service";
 import { MaintenanceRecordWithDetails, RoomWithType, User } from "@/lib/types";
 
 interface MaintenanceTabProps {
@@ -44,12 +44,24 @@ function getStatusClass(status: string) {
 export function MaintenanceTab({
   rooms, maintenanceRecords, onAddMaintenance, onUpdateStatus, formatCurrency
 }: MaintenanceTabProps) {
-  // State Dialog cục bộ
+  const [users, setUsers] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [roomId, setRoomId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [description, setDescription] = useState("");
   const [cost, setCost] = useState("0");
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const data = await UserAPI.getUsers();
+        setUsers(data);
+      } catch (error) {
+        console.error("Lỗi khi tải danh sách nhân viên:", error);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   const handleOpen = () => {
     setRoomId("");
@@ -70,7 +82,8 @@ export function MaintenanceTab({
       description,
       repairCost: parseFloat(cost) || 0,
       startDate: new Date().toISOString(),
-      remarks: staffId ? `Giao cho nhân viên ID: ${staffId}` : ""
+      remarks: staffId ? `Giao cho nhân viên ID: ${staffId}` : "",
+      staffId: staffId || null
     });
     setIsOpen(false);
   };
@@ -95,6 +108,7 @@ export function MaintenanceTab({
             <TableRow>
               <TableHead>Phòng</TableHead>
               <TableHead>Mô tả sự cố</TableHead>
+              <TableHead>Nhân viên phụ trách</TableHead>
               <TableHead>Ngày bắt đầu</TableHead>
               <TableHead>Ngày kết thúc</TableHead>
               <TableHead className="text-right">Chi phí</TableHead>
@@ -105,7 +119,7 @@ export function MaintenanceTab({
           <TableBody>
             {maintenanceRecords.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
                   Chưa có phòng nào được đưa vào danh sách bảo trì.
                 </TableCell>
               </TableRow>
@@ -114,6 +128,9 @@ export function MaintenanceTab({
                 <TableRow key={record.id}>
                   <TableCell className="font-bold">{record.room?.roomNumber}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{record.description}</TableCell>
+                  <TableCell className="max-w-[150px] truncate font-medium text-xs">
+                    {record.staff ? record.staff.fullName : "-"}
+                  </TableCell>
                   <TableCell>
                     {record.startDate ? format(new Date(record.startDate), "dd/MM/yyyy") : "-"}
                   </TableCell>
@@ -216,8 +233,8 @@ export function MaintenanceTab({
               <Select value={staffId} onValueChange={setStaffId}>
                 <SelectTrigger><SelectValue placeholder="Chọn nhân viên (Không bắt buộc)" /></SelectTrigger>
                 <SelectContent>
-                  {getMaintenanceStaff().map((u: User) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                  {users.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>{u.fullName || u.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

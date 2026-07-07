@@ -18,6 +18,7 @@ const serializeInvoice = (inv: any) => {
       id: inv.booking.id.toString(),
       roomId: inv.booking.roomId.toString(),
       userId: inv.booking.userId ? inv.booking.userId.toString() : null,
+      customerId: inv.booking.customerId ? inv.booking.customerId.toString() : null,
       totalAmount: Number(inv.booking.totalAmount),
       room: inv.booking.room ? {
         ...inv.booking.room,

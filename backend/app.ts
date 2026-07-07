@@ -9,6 +9,7 @@ import serviceRoutes from './routes/service.route';
 import invoiceRoutes from './routes/invoice.route';
 import financeRoutes from './routes/finance.route';
 import inventoryRoutes from './routes/inventory.route';
+import customerRoutes from './routes/customer.route';
 
 const app: Application = express();
 
@@ -28,6 +29,7 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/customers', customerRoutes);
 
 
 // 3. Health check (để kiểm tra server sống hay chết)

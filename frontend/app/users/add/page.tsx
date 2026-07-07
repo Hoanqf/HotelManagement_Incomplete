@@ -41,6 +41,7 @@ const AVAILABLE_PERMISSIONS = [
   { key: "DASHBOARD", name: "Tổng quan (Dashboard)", desc: "Xem biểu đồ doanh thu, số liệu tổng hợp hệ thống" },
   { key: "ROOMS", name: "Quản lý phòng (Rooms)", desc: "Xem trạng thái, sơ đồ phòng, dọn dẹp" },
   { key: "BOOKINGS", name: "Đặt phòng (Bookings)", desc: "Đặt phòng mới, nhận/trả phòng (Check-in/Check-out)" },
+  { key: "CUSTOMERS", name: "Quản lý khách hàng (Customers)", desc: "Xem danh sách khách hàng, lịch sử đặt và chi tiêu" },
   { key: "SERVICES", name: "Dịch vụ phòng (Services)", desc: "Gọi món, dịch vụ giặt là, spa cho khách hàng" },
   { key: "INVOICES", name: "Hóa đơn & In ấn (Invoices)", desc: "Xuất hóa đơn, thanh toán, in hóa đơn thanh toán" },
   { key: "INVENTORY", name: "Quản lý kho (Inventory)", desc: "Nhập xuất hàng hóa tiêu dùng, đồ uống, trang thiết bị" },
@@ -52,12 +53,12 @@ const AVAILABLE_PERMISSIONS = [
 const getDefaultPermissions = (role: string): string[] => {
   switch (role) {
     case "SUPERADMIN":
-      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS", "USERS"];
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "CUSTOMERS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS", "USERS"];
     case "ADMIN":
     case "MANAGER":
-      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS"];
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "CUSTOMERS", "SERVICES", "INVOICES", "INVENTORY", "FINANCE", "REPORTS"];
     case "STAFF":
-      return ["DASHBOARD", "ROOMS", "BOOKINGS", "SERVICES", "INVOICES", "INVENTORY"];
+      return ["DASHBOARD", "ROOMS", "BOOKINGS", "CUSTOMERS", "SERVICES", "INVOICES", "INVENTORY"];
     default:
       return [];
   }

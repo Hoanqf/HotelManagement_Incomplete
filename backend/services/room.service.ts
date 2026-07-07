@@ -16,7 +16,7 @@ export const RoomService = {
     const rooms = await prisma.room.findMany({
       include: {
         roomType: true,
-        // Lấy thông tin đặt phòng đang hoạt động (đã nhận phòng hoặc đã đặt trước)
+        // Lấy tất cả đặt phòng chưa hủy/thành công để xử lý lọc thời gian
         bookings: {
           where: {
             status: {
@@ -24,9 +24,8 @@ export const RoomService = {
             }
           },
           orderBy: {
-            createdAt: "desc"
-          },
-          take: 1
+            checkInDate: "asc"
+          }
         },
         // Lấy thông tin bảo trì đang hoạt động
         maintenance: {
@@ -43,42 +42,61 @@ export const RoomService = {
       },
     });
 
-    return rooms.map(room => ({
-      ...room,
-      id: room.id.toString(),
-      roomTypeId: `rt-${room.roomTypeId.toString()}`, // Định dạng lại giống mock frontend ("rt-1")
-      amenities: room.amenities || [], // Tiện nghi riêng biệt của phòng
-      pricePerNight: room.pricePerNight !== null ? Number(room.pricePerNight) : Number(room.roomType.pricePerNight),
-      capacity: room.capacity !== null && room.capacity !== undefined ? room.capacity : room.roomType.capacity,
-      roomType: {
-        ...room.roomType,
-        id: `rt-${room.roomType.id.toString()}`,
-        pricePerNight: Number(room.roomType.pricePerNight),
-        priceHourly: Number(room.roomType.priceHourly || 0),
-        priceDaily: Number(room.roomType.priceDaily || 0),
-        priceOvernight: Number(room.roomType.priceOvernight || 0),
-        priceHourlyWeekend: Number(room.roomType.priceHourlyWeekend || 0),
-        priceDailyWeekend: Number(room.roomType.priceDailyWeekend || 0),
-        priceOvernightWeekend: Number(room.roomType.priceOvernightWeekend || 0),
-        priceHourlyHoliday: Number(room.roomType.priceHourlyHoliday || 0),
-        priceDailyHoliday: Number(room.roomType.priceDailyHoliday || 0),
-        priceOvernightHoliday: Number(room.roomType.priceOvernightHoliday || 0),
-        amenities: room.roomType.amenities || []
-      },
-      // Chuyển đổi các BigInt trong mảng bookings và maintenance
-      bookings: room.bookings.map(b => ({
-        ...b,
-        id: b.id.toString(),
-        roomId: b.roomId.toString(),
-        userId: b.userId ? b.userId.toString() : null,
-      })),
-      maintenance: room.maintenance.map(m => ({
-        ...m,
-        id: m.id.toString(),
-        roomId: m.roomId.toString(),
-        staffId: m.staffId ? m.staffId.toString() : null,
-      }))
-    }));
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    return rooms.map(room => {
+      // 1. Tìm đặt phòng đang check-in
+      let activeBooking = room.bookings.find(b => b.status === "CHECKED_IN");
+
+      // 2. Nếu không có khách đang ở, tìm đặt trước (CONFIRMED/PENDING) chưa hết hạn
+      if (!activeBooking) {
+        activeBooking = room.bookings.find(b => {
+          const checkOut = new Date(b.checkOutDate);
+          return checkOut >= todayStart;
+        });
+      }
+
+      const activeBookingsList = activeBooking ? [activeBooking] : [];
+
+      return {
+        ...room,
+        id: room.id.toString(),
+        roomTypeId: `rt-${room.roomTypeId.toString()}`, // Định dạng lại giống mock frontend ("rt-1")
+        amenities: room.amenities || [], // Tiện nghi riêng biệt của phòng
+        pricePerNight: room.pricePerNight !== null ? Number(room.pricePerNight) : Number(room.roomType.pricePerNight),
+        capacity: room.capacity !== null && room.capacity !== undefined ? room.capacity : room.roomType.capacity,
+        roomType: {
+          ...room.roomType,
+          id: `rt-${room.roomType.id.toString()}`,
+          pricePerNight: Number(room.roomType.pricePerNight),
+          priceHourly: Number(room.roomType.priceHourly || 0),
+          priceDaily: Number(room.roomType.priceDaily || 0),
+          priceOvernight: Number(room.roomType.priceOvernight || 0),
+          priceHourlyWeekend: Number(room.roomType.priceHourlyWeekend || 0),
+          priceDailyWeekend: Number(room.roomType.priceDailyWeekend || 0),
+          priceOvernightWeekend: Number(room.roomType.priceOvernightWeekend || 0),
+          priceHourlyHoliday: Number(room.roomType.priceHourlyHoliday || 0),
+          priceDailyHoliday: Number(room.roomType.priceDailyHoliday || 0),
+          priceOvernightHoliday: Number(room.roomType.priceOvernightHoliday || 0),
+          amenities: room.roomType.amenities || []
+        },
+        // Chỉ trả về đặt phòng đang hoạt động thực tế
+        bookings: activeBookingsList.map(b => ({
+          ...b,
+          id: b.id.toString(),
+          roomId: b.roomId.toString(),
+          userId: b.userId ? b.userId.toString() : null,
+          customerId: b.customerId ? b.customerId.toString() : null,
+        })),
+        maintenance: room.maintenance.map(m => ({
+          ...m,
+          id: m.id.toString(),
+          roomId: m.roomId.toString(),
+          staffId: m.staffId ? m.staffId.toString() : null,
+        }))
+      };
+    });
   },
 
   // 1.5. Lấy danh sách loại phòng từ database

@@ -18,7 +18,8 @@ export const MaintenanceService = {
           include: {
             roomType: true
           }
-        }
+        },
+        staff: true
       },
       orderBy: {
         createdAt: "desc"
@@ -42,19 +43,27 @@ export const MaintenanceService = {
           id: `rt-${r.room.roomType.id.toString()}`,
           pricePerNight: Number(r.room.roomType.pricePerNight)
         }
-      }
+      },
+      staff: r.staff ? {
+        id: r.staff.id.toString(),
+        fullName: r.staff.fullName,
+        email: r.staff.email,
+        role: r.staff.role
+      } : null
     }));
   },
 
   // 2. Tạo bản ghi bảo trì mới
   createRecord: async (data: any) => {
-    const { roomId, description, repairCost, startDate, remarks } = data;
+    const { roomId, description, repairCost, startDate, remarks, staffId } = data;
     const cleanId = cleanRoomId(roomId);
+    const cleanStaffId = staffId ? BigInt(staffId) : null;
 
     // Tạo bản ghi bảo trì
     const newRecord = await prisma.maintenanceRecord.create({
       data: {
         roomId: cleanId,
+        staffId: cleanStaffId,
         description: description || "",
         status: "IN_PROGRESS", // Đổi mặc định thành IN_PROGRESS (Đang sửa chữa) để khớp với giao diện
         startDate: startDate ? new Date(startDate) : new Date(),
@@ -66,7 +75,8 @@ export const MaintenanceService = {
           include: {
             roomType: true
           }
-        }
+        },
+        staff: true
       }
     });
 
@@ -93,7 +103,13 @@ export const MaintenanceService = {
           id: `rt-${newRecord.room.roomType.id.toString()}`,
           pricePerNight: Number(newRecord.room.roomType.pricePerNight)
         }
-      }
+      },
+      staff: newRecord.staff ? {
+        id: newRecord.staff.id.toString(),
+        fullName: newRecord.staff.fullName,
+        email: newRecord.staff.email,
+        role: newRecord.staff.role
+      } : null
     };
   },
 
@@ -125,14 +141,15 @@ export const MaintenanceService = {
           include: {
             roomType: true
           }
-        }
+        },
+        staff: true
       }
     });
 
     // Nghiệp vụ tự động đổi trạng thái phòng tương ứng
     let roomStatus = "MAINTENANCE";
     if (status === "COMPLETED" || status === "CANCELLED") {
-      roomStatus = "AVAILABLE"; // Chuyển về sẵn sàng khi sửa xong hoặc hủy sửa
+      roomStatus = "DIRTY"; // Bảo trì xong hoặc hủy -> chuyển sang Bẩn để dọn dẹp và kiểm tra lại phòng trước khi bán!
     } else {
       roomStatus = "MAINTENANCE"; // Vẫn bảo trì khi sửa hoặc chờ linh kiện
     }
@@ -160,7 +177,13 @@ export const MaintenanceService = {
           id: `rt-${updatedRecord.room.roomType.id.toString()}`,
           pricePerNight: Number(updatedRecord.room.roomType.pricePerNight)
         }
-      }
+      },
+      staff: updatedRecord.staff ? {
+        id: updatedRecord.staff.id.toString(),
+        fullName: updatedRecord.staff.fullName,
+        email: updatedRecord.staff.email,
+        role: updatedRecord.staff.role
+      } : null
     };
   },
 
